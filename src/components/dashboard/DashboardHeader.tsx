@@ -1,8 +1,7 @@
 "use client";
 
 import { UserButton, useUser } from "@clerk/nextjs";
-import { Button } from "~/components/ui/button";
-import { Plus } from "lucide-react";
+import { CreateWorkflowDialog } from "./CreateWorkflowDialog";
 
 export function DashboardHeader() {
   const { user, isLoaded } = useUser();
@@ -16,12 +15,7 @@ export function DashboardHeader() {
       </div>
 
       <div className="flex items-center gap-4">
-        <Button 
-          className="gap-2 rounded-lg bg-[#E0FC00] px-4 py-2 text-sm font-semibold text-black hover:bg-[#c9e200] transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Create New File
-        </Button>
+        <CreateWorkflowDialog />
         <div className="h-6 w-[1px] bg-white/10" />
         <UserButton 
             appearance={{

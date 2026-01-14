@@ -1,5 +1,6 @@
 import { Button } from "~/components/ui/button";
 import { Box } from "lucide-react";
+import { CreateWorkflowDialog } from "./CreateWorkflowDialog";
 
 export function EmptyState() {
   return (
@@ -13,9 +14,13 @@ export function EmptyState() {
         Start weaving to bring your ideas to life.
       </p>
 
-      <Button className="rounded-lg bg-white/10 px-6 py-6 text-sm font-medium text-white ring-1 ring-white/20 transition-all hover:bg-white/20 hover:scale-105">
-        Create New File
-      </Button>
+      <CreateWorkflowDialog 
+        trigger={
+          <Button className="rounded-lg bg-white/10 px-6 py-6 text-sm font-medium text-white ring-1 ring-white/20 transition-all hover:bg-white/20 hover:scale-105 cursor-pointer">
+            Create New File
+          </Button>
+        }
+      />
     </div>
   );
 }

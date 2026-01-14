@@ -19,3 +19,13 @@ model Post {
 
   @@index([name])
 }
+
+model Workflow {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
