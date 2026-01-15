@@ -41,7 +41,7 @@ const TOOL_ITEMS = [
     id: "crop-image",
     label: "Crop Image",
     icon: Crop,
-    type: "text", // Placeholder changed to text
+    type: "crop-image",
   },
   {
     id: "upload-video",

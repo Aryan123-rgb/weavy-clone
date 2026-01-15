@@ -1,48 +1,63 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { env } from "~/env"
 
 export const runLLMTask = task({
   id: "run-llm-task",
   retry: {
     maxAttempts: 1, // Disable retries as requested
   },
-  run: async (payload: { prompt: string; system?: string; image?: any }) => {
+  run: async (payload: { prompt: string; system?: string; image?: string }) => {
 
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error("GOOGLE_API_KEY Not set");
-    }
+    const apiKey = env.GROQ_API_KEY;
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
+      const { Groq } = await import("groq-sdk");
+      const groq = new Groq({ apiKey });
 
-      // Use system instruction if available in SDK, or fallback to prepending
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        systemInstruction: payload.system ? {
+      const messages: any[] = [];
+
+      // System Input
+      if (payload.system) {
+        messages.push({
           role: "system",
-          parts: [{ text: payload.system }]
-        } : undefined
+          content: payload.system
+        });
+      }
+
+      // User Input (Content can be string or array for vision)
+      const userContent: any[] = [{ type: "text", text: payload.prompt }];
+
+      // Image Input
+      if (payload.image) {
+        // payload.image is expected to be a data URL or base64 string
+        // Groq/OpenAI format expects data URL
+        userContent.push({
+          type: "image_url",
+          image_url: {
+            url: payload.image,
+          }
+        });
+      }
+
+      messages.push({
+        role: "user",
+        content: userContent
       });
 
-      const parts: any[] = [];
+      const completion = await groq.chat.completions.create({
+        messages: messages,
+        model: payload.image ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile",
+      });
 
-      // Add text prompt
-      parts.push({ text: payload.prompt });
-
-      // TODO: Handle image if payload.image is provided structure suitable for Gemini
-      // if (payload.image) ...
-
-      const result = await model.generateContent(parts);
-      const response = await result.response;
-      const text = response.text();
+      const text = completion.choices[0]?.message?.content || "";
 
       return {
         result: text,
       };
     } catch (error) {
-      console.error("Gemini AI generation failed:", error);
-      throw error; // Throwing ensures task fails and we catch it in polling
+      console.error("Groq AI generation failed:", error);
+      throw error;
     }
   },
 });

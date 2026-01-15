@@ -1,16 +1,16 @@
-"use client"
+"use client";
 /**
  * Wrapper component for the Workflow Editor.
  * Provides the ReactFlow context and handles the Drag and Drop (DnD) context initialization.
- * 
+ *
  * Key Responsibilities:
  * 1. Sets up the `ReactFlowProvider` to share flow state (nodes, edges, viewport) across children.
  * 2. Wraps the editor in `WorkflowEditorContent`.
- * 
+ *
  * Maintainability Note:
  * - Keep this component thin. It should strictly handle Context Providers.
  * - Logic for DnD and Nodes should be in `WorkflowEditorContent`.
- * 
+ *
  * @property {string} workflowName - Name to display in the editor.
  */
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
@@ -19,6 +19,7 @@ import { LeftSidebar } from "./LeftSidebar";
 import { EditorCanvas } from "./EditorCanvas";
 import { TextNode } from "./nodes/TextNode";
 import { UploadImageNode } from "./nodes/UploadImageNode";
+import { CropImageNode } from "./nodes/CropImageNode";
 import { RunLLMNode } from "./nodes/RunLLMNode";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -26,13 +27,14 @@ import { createPortal } from "react-dom";
 // Register custom node types
 // Mapped by the 'type' field in node data
 const nodeTypes = {
-  "text": TextNode,
+  text: TextNode,
   "upload-image": UploadImageNode,
+  "crop-image": CropImageNode,
   "run-llm": RunLLMNode,
 };
 
 /**
- * Droppable area for the canvas. 
+ * Droppable area for the canvas.
  * Allows handling of drop events from the sidebar using @dnd-kit.
  */
 function DroppableCanvasArea({ children }: { children: React.ReactNode }) {
@@ -50,12 +52,12 @@ function DroppableCanvasArea({ children }: { children: React.ReactNode }) {
 /**
  * Main content of the workflow editor.
  * Handles drag and drop logic converting screen coordinates to flow coordinates.
- * 
+ *
  * Data Flow:
  * - DndContext captures drag events from LeftSidebar.
  * - onDragEnd calculates the drop position and uses instance.screenToFlowPosition().
  * - verify nodeTypes match the `type` passed from sidebar items.
- * 
+ *
  * @property {string} workflowName - The name of the current workflow.
  */
 function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
@@ -130,7 +132,7 @@ function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
 /**
  * Wrapper component for the Workflow Editor.
  * Provides the ReactFlow context.
- * 
+ *
  * @property {string} workflowName - Name to display in the editor.
  */
 export function WorkflowWrapper({ workflowName }: { workflowName: string }) {

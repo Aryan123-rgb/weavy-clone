@@ -4,41 +4,42 @@ import { Handle, Position } from "@xyflow/react";
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import type { Node, NodeProps } from "@xyflow/react";
-import { X, Upload } from "lucide-react";
+import { X, Upload, Crop as CropIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { useFlowStore } from "~/store/flowStore";
 
 // Define the data type for our node
-type UploadImageNodeData = {
+type CropImageNodeData = {
   label?: string;
   imageUrl?: string;
+  image?: string; // base64 string
 };
 
-type MyNode = Node<UploadImageNodeData>;
+type MyNode = Node<CropImageNodeData>;
 
-export function UploadImageNode({ data, selected }: NodeProps<MyNode>) {
+export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
   const [imageUrl, setImageUrl] = useState<string | undefined>(data.imageUrl);
+  const { updateNodeData } = useFlowStore();
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      // Create a local object URL for preview
-      const objectUrl = URL.createObjectURL(file);
-      setImageUrl(objectUrl);
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      const file = acceptedFiles[0];
+      if (file) {
+        // Create a local object URL for preview
+        const objectUrl = URL.createObjectURL(file);
+        setImageUrl(objectUrl);
 
-      // Convert to Base64/DataURL for passing to other nodes
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result as string;
-        // Update global flow store so connected nodes can access this data
-        // We need to access the store's updateNodeData.
-        // Since we can't easily hook into the store inside this callback without the hook,
-        // we'll trigger an effect or use the hook in the component body.
-      };
-      reader.readAsDataURL(file);
-
-      console.log("File dropped:", file);
-    }
-  }, []);
+        // Convert to Base64/DataURL
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64String = reader.result as string;
+          updateNodeData(id, { imageUrl: objectUrl, image: base64String });
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [id, updateNodeData],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -52,6 +53,7 @@ export function UploadImageNode({ data, selected }: NodeProps<MyNode>) {
   const clearImage = (e: React.MouseEvent) => {
     e.stopPropagation();
     setImageUrl(undefined);
+    updateNodeData(id, { imageUrl: undefined, image: undefined });
   };
 
   return (
@@ -65,9 +67,12 @@ export function UploadImageNode({ data, selected }: NodeProps<MyNode>) {
     >
       {/* Header */}
       <div className="flex h-10 items-center justify-between border-b border-white/5 bg-[#222] px-4 py-2">
-        <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
-          {data.label || "Upload Image"}
-        </span>
+        <div className="flex items-center gap-2">
+          <CropIcon className="h-4 w-4 text-[#E0FC00]" />
+          <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
+            {data.label || "Crop Image"}
+          </span>
+        </div>
       </div>
 
       {/* Content Area */}

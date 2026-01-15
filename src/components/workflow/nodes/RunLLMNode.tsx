@@ -41,22 +41,24 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     connection: Connection | Edge,
     expectedSourceType: "text" | "image",
   ) => {
-    if (expectedSourceType === "text") {
-      if (
-        connection.sourceHandle !== "text" &&
-        connection.sourceHandle !== "prompt" &&
-        connection.sourceHandle !== "system"
-      ) {
-        return false;
-      }
-    } else if (expectedSourceType === "image") {
-      if (
-        connection.sourceHandle === "text" ||
-        connection.sourceHandle === "prompt"
-      ) {
-        return false;
-      }
+    // connection.sourceHandle is the ID of the handle on the source node
+    const sourceHandleId = connection.sourceHandle;
+
+    if (expectedSourceType === "image") {
+       // Only allow connection if the source handle is explicitly an image output
+       // We assume nodes outputting images use id="image"
+       if (sourceHandleId === "image") return true;
+       return false;
     }
+
+    if (expectedSourceType === "text") {
+        // Allow text inputs from text-like handles
+        // We assume nodes outputting text use id="text" (TextNode) or "result" (RunLLMNode) or "prompt" (RunLLMNode pass-through)
+        // Explicitly ban "image" handle
+        if (sourceHandleId === "image") return false;
+        return true;
+    }
+    
     return true;
   };
 
@@ -93,8 +95,17 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       return "";
     };
 
+    const safeGetImage = (obj: unknown): string | undefined => {
+        if (typeof obj === "object" && obj !== null && "image" in obj) {
+            const val = (obj as Record<string, unknown>).image;
+            return typeof val === "string" ? val : undefined;
+        }
+        return undefined;
+    };
+
     const systemText = safeGetText(systemData);
     const promptText = safeGetText(promptData);
+    const imageBase64 = safeGetImage(imageData);
 
     setExecutionState(id, "running");
 
@@ -112,7 +123,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       const runResult = await triggerLLMRun({
         system: systemText,
         prompt: promptText,
-        image: imageData,
+        image: imageBase64,
       });
 
       // Check if task failed or has error
