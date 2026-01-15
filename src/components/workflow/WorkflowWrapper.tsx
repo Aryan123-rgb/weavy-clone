@@ -1,32 +1,63 @@
-"use client";
-
+"use client"
+/**
+ * Wrapper component for the Workflow Editor.
+ * Provides the ReactFlow context and handles the Drag and Drop (DnD) context initialization.
+ * 
+ * Key Responsibilities:
+ * 1. Sets up the `ReactFlowProvider` to share flow state (nodes, edges, viewport) across children.
+ * 2. Wraps the editor in `WorkflowEditorContent`.
+ * 
+ * Maintainability Note:
+ * - Keep this component thin. It should strictly handle Context Providers.
+ * - Logic for DnD and Nodes should be in `WorkflowEditorContent`.
+ * 
+ * @property {string} workflowName - Name to display in the editor.
+ */
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { LeftSidebar } from "./LeftSidebar";
 import { EditorCanvas } from "./EditorCanvas";
-import { PromptNode } from "./nodes/PromptNode";
+import { TextNode } from "./nodes/TextNode";
 import { UploadImageNode } from "./nodes/UploadImageNode";
+import { RunLLMNode } from "./nodes/RunLLMNode";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
 // Register custom node types
+// Mapped by the 'type' field in node data
 const nodeTypes = {
-  prompt: PromptNode,
+  "text": TextNode,
   "upload-image": UploadImageNode,
+  "run-llm": RunLLMNode,
 };
 
+/**
+ * Droppable area for the canvas. 
+ * Allows handling of drop events from the sidebar using @dnd-kit.
+ */
 function DroppableCanvasArea({ children }: { children: React.ReactNode }) {
   const { setNodeRef } = useDroppable({
-    id: 'canvas-droppable',
+    id: "canvas-droppable",
   });
 
   return (
-    <div ref={setNodeRef} className="relative flex-1 flex flex-col h-full">
+    <div ref={setNodeRef} className="relative flex h-full flex-1 flex-col">
       {children}
     </div>
   );
 }
 
+/**
+ * Main content of the workflow editor.
+ * Handles drag and drop logic converting screen coordinates to flow coordinates.
+ * 
+ * Data Flow:
+ * - DndContext captures drag events from LeftSidebar.
+ * - onDragEnd calculates the drop position and uses instance.screenToFlowPosition().
+ * - verify nodeTypes match the `type` passed from sidebar items.
+ * 
+ * @property {string} workflowName - The name of the current workflow.
+ */
 function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
   const { screenToFlowPosition, addNodes } = useReactFlow();
   const [activeDragItem, setActiveDragItem] = useState<any>(null);
@@ -39,95 +70,73 @@ function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
     setActiveDragItem(null);
     const { active, over } = event;
 
-    if (over && over.id === 'canvas-droppable') {
-      const type = active.data.current?.type || 'prompt';
-      const label = active.data.current?.label || 'New Node';
+    if (over && over.id === "canvas-droppable") {
+      const type = active.data.current?.type || "text";
+      const label = active.data.current?.label || "New Node";
 
-      // We need client coordinates to project to flow coordinates
-      // dnd-kit provides coordinates in event.delta (relative) or activatorEvent
-      // But we can check if event.activatorEvent is a pointer event
-      // However, a simpler way with React Flow is to use the mouse position relative to window
-      // But dnd-kit provides 'event.active.rect' etc.
-      
-      // Better approach: Use the center of the dropped element?
-      // Or just map the drop position from the event if available.
-      // Dnd-kit's event.over doesn't give precise coordinates easily for the drop *point* relative to container without some math.
-      // BUT `event.active.rect.current.translated` gives the final position on screen.
-      
+      // Calculate position
       const droppedRect = event.active.rect.current.translated;
       if (!droppedRect) return;
 
-      // Calculate center of dropped item
       const x = droppedRect.left + droppedRect.width / 2;
       const y = droppedRect.top + droppedRect.height / 2;
 
+      // Convert Screen Coords -> Flow Coords
       const position = screenToFlowPosition({ x, y });
 
       const newNode = {
         id: crypto.randomUUID(),
         type,
         position,
-        data: { label, prompt: "Editable prompt text..." },
+        data: { label, text: "" }, // Default data for TextNode
       };
 
       addNodes(newNode);
     }
   };
 
-  const onPaneDoubleClick = (event: React.MouseEvent) => {
-      // Add a node at the double-clicked position
-      const position = screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-      });
-
-      const newNode = {
-          id: crypto.randomUUID(),
-          type: 'prompt',
-          position,
-          data: { label: 'New Prompt', prompt: "Double-clicked node..." },
-      };
-      
-      addNodes(newNode);
-  };
-
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex h-screen w-full bg-black text-white overflow-hidden">
-             <LeftSidebar />
-             
-             <DroppableCanvasArea>
-                 {/* Top Bar showing Workflow Name */}
-                 <div className="absolute top-4 left-4 z-10 bg-black/50 backdrop-blur-md px-4 py-2 rounded-md border border-white/10 pointer-events-none">
-                     <span className="text-sm font-medium text-gray-300">{workflowName}</span>
-                 </div>
-                 
-                 <EditorCanvas 
-                    nodeTypes={nodeTypes} 
-                    onPaneDoubleClick={onPaneDoubleClick}
-                 />
-             </DroppableCanvasArea>
-        </div>
-        
-        {/* Optional: Drag Overlay for smoother visuals (portaled) */}
-        {createPortal(
-            <DragOverlay>
-                {activeDragItem ? (
-                     <div className="flex items-center justify-center gap-2 rounded-lg bg-[#E0FC00] p-4 border border-white/20 shadow-2xl opacity-80 text-black">
-                        <span className="font-bold">{activeDragItem.label}</span>
-                     </div>
-                ) : null}
-            </DragOverlay>,
-            document.body
-        )}
+      <div className="flex h-screen w-full overflow-hidden bg-black text-white">
+        <LeftSidebar />
+
+        <DroppableCanvasArea>
+          {/* Top Bar showing Workflow Name */}
+          <div className="pointer-events-none absolute top-4 left-4 z-10 rounded-md border border-white/10 bg-black/50 px-4 py-2 backdrop-blur-md">
+            <span className="text-sm font-medium text-gray-300">
+              {workflowName}
+            </span>
+          </div>
+
+          <EditorCanvas nodeTypes={nodeTypes} />
+        </DroppableCanvasArea>
+      </div>
+
+      {/* Drag Overlay for smoother visuals (portaled to body) */}
+      {createPortal(
+        <DragOverlay>
+          {activeDragItem ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-[#E0FC00] p-4 text-black opacity-80 shadow-2xl">
+              <span className="font-bold">{activeDragItem.label}</span>
+            </div>
+          ) : null}
+        </DragOverlay>,
+        document.body,
+      )}
     </DndContext>
   );
 }
 
-export function WorkflowWrapper({ workflowName, workflowId }: { workflowName: string; workflowId: string }) {
+/**
+ * Wrapper component for the Workflow Editor.
+ * Provides the ReactFlow context.
+ * 
+ * @property {string} workflowName - Name to display in the editor.
+ */
+export function WorkflowWrapper({ workflowName }: { workflowName: string }) {
   return (
     <ReactFlowProvider>
-        <WorkflowEditorContent workflowName={workflowName} />
+      <WorkflowEditorContent workflowName={workflowName} />
     </ReactFlowProvider>
   );
 }

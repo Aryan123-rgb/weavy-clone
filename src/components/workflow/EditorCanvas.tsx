@@ -7,20 +7,33 @@ import {
   MiniMap,
   BackgroundVariant,
 } from "@xyflow/react";
-import type { NodeTypes, ReactFlowProps } from "@xyflow/react";
+import type { NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+/**
+ * Props for the EditorCanvas component.
+ * @property {NodeTypes} [nodeTypes] - Custom node types to register with React Flow.
+ */
 interface EditorCanvasProps {
   nodeTypes?: NodeTypes;
-  onPaneDoubleClick?: (event: React.MouseEvent) => void;
 }
 
-export function EditorCanvas({
-  nodeTypes,
-  onPaneDoubleClick,
-}: EditorCanvasProps) {
+/**
+ * The main workflow canvas component using React Flow.
+ * 
+ * Configuration:
+ * - Infinite Canvas: Enabled by default in React Flow.
+ * - Zoom/Pan: Controlled by `minZoom`, `maxZoom`, `panOnScroll`, etc.
+ * - Styling: Uses a dark theme with 'Dots' background.
+ * - Controls: Native React Flow controls for zoom/fit.
+ * 
+ * Maintainability:
+ * - This component accepts `nodeTypes` as a prop to decouple it from specific node implementations.
+ * - Keep layout-specific configurations (colors, snap-to-grid) here.
+ */
+export function EditorCanvas({ nodeTypes }: EditorCanvasProps) {
   return (
-    <div className="h-full w-full bg-[#111]" onDoubleClick={onPaneDoubleClick}>
+    <div className="h-full w-full bg-[#111]">
       <ReactFlow
         defaultNodes={[]}
         defaultEdges={[]}

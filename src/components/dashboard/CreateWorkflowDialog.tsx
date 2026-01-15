@@ -30,7 +30,7 @@ import { api } from "~/trpc/react";
 import { toast } from "sonner";
 
 const formSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Name is required").max(30, "Name must be at most 30 characters long"),
 });
 
 export function CreateWorkflowDialog({ trigger }: { trigger?: React.ReactNode }) {

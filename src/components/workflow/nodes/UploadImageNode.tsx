@@ -4,7 +4,7 @@ import { Handle, Position } from "@xyflow/react";
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import type { Node, NodeProps } from "@xyflow/react";
-import { X, Upload, Image as ImageIcon } from "lucide-react";
+import { X, Upload } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 // Define the data type for our node

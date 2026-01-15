@@ -16,7 +16,7 @@ export const workflowRouter = createTRPCRouter({
       return ctx.db.workflow.create({
         data: {
           name: input.name,
-          userId,
+          userId: userId,
         },
       });
     }),
@@ -31,7 +31,6 @@ export const workflowRouter = createTRPCRouter({
       return ctx.db.workflow.findFirst({
         where: {
           id: input.id,
-          userId,
         },
       });
     }),

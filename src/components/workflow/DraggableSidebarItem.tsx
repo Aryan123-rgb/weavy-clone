@@ -4,6 +4,14 @@ import { useDraggable } from "@dnd-kit/core";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
+/**
+ * Props for the DraggableSidebarItem component.
+ * @property {string} id - Unique identifier for the item.
+ * @property {string} label - Display label for the item.
+ * @property {LucideIcon} icon - Icon component to render.
+ * @property {string} [type] - The node type this item represents (e.g., 'prompt', 'run-llm').
+ * @property {() => void} onClick - Callback when clicked (optional if drag-only).
+ */
 interface SidebarItemProps {
   id: string;
   label: string;
@@ -11,6 +19,11 @@ interface SidebarItemProps {
   type?: string;
   onClick: () => void;
 }
+
+/**
+ * A sidebar item that can be dragged into the canvas.
+ * Uses dnd-kit's useDraggable hook.
+ */
 
 export function DraggableSidebarItem({
   id,
@@ -22,7 +35,7 @@ export function DraggableSidebarItem({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: id,
     data: {
-      type: type, // Use dynamic type
+      type: type,
       label: label,
     },
   });

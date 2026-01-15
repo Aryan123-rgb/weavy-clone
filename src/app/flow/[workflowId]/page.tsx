@@ -14,7 +14,6 @@ export default async function WorkflowPage({ params }: { params: Promise<{ workf
   return (
     <WorkflowWrapper 
       workflowName={workflow.name} 
-      workflowId={workflowId} 
     />
   );
 }

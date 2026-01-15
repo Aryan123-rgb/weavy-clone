@@ -17,18 +17,19 @@ import {
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { useReactFlow } from "@xyflow/react";
 
 import { DraggableSidebarItem } from "./DraggableSidebarItem";
 
-// Configuration for tool items to keep logic extendable
-// Note: action is now primarily for double-click/click behavior context, but drag handles the main "add" logic via dnd-kit
+/**
+ * Configuration for available tool items in the sidebar.
+ * Simplifies adding new tools by defining them in a central array.
+ */
 const TOOL_ITEMS = [
   {
     id: "text",
     label: "Text",
     icon: Type,
-    type: "prompt", // Node Type
+    type: "text",
   },
   {
     id: "upload-image",
@@ -40,34 +41,38 @@ const TOOL_ITEMS = [
     id: "crop-image",
     label: "Crop Image",
     icon: Crop,
-    type: "prompt",
+    type: "text", // Placeholder changed to text
   },
   {
     id: "upload-video",
     label: "Upload Video",
     icon: Video,
-    type: "prompt",
+    type: "text", // Placeholder changed to text
   },
   {
     id: "extract-frame",
     label: "Extract Frame",
     icon: Smartphone,
-    type: "prompt",
+    type: "text", // Placeholder changed to text
   },
   {
     id: "run-llm",
     label: "Run LLM",
     icon: Bot,
-    type: "prompt",
+    type: "run-llm",
   },
 ];
 
+/**
+ * LeftSidebar Component
+ * Displays a collapsible sidebar with search and quick access tools.
+ * Tools can be dragged onto the canvas.
+ */
 export function LeftSidebar() {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [activePanel, setActivePanel] = useState<
     "search" | "quick-access" | null
   >(null);
-  const { addNodes } = useReactFlow();
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -168,10 +173,7 @@ export function LeftSidebar() {
                     label={tool.label}
                     icon={tool.icon}
                     type={tool.type}
-                    onClick={() => {
-                      // No-op for single click as requested ("do not need to modify the canvas on a single click")
-                      console.log("Clicked:", tool.id);
-                    }}
+                    onClick={() => {}}
                   />
                 ))}
               </div>
