@@ -6,14 +6,17 @@ import {
   useReactFlow,
   useHandleConnections,
 } from "@xyflow/react";
-import type { Node, NodeProps } from "@xyflow/react";
-import { Bot, Image as ImageIcon } from "lucide-react";
+import type { Node, NodeProps, Connection, Edge } from "@xyflow/react";
+import { Bot } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
+import { toast } from "sonner";
 
 type RunLLMNodeData = {
   label?: string;
   result?: string;
+  systemUsed?: string;
+  promptUsed?: string;
 };
 
 type MyNode = Node<RunLLMNodeData>;
@@ -26,13 +29,16 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
   const promptConnections = useHandleConnections({ type: "target", id: "prompt" });
   const imageConnections = useHandleConnections({ type: "target", id: "image1" });
 
-  const { setExecutionState, executionState, updateNodeData } = useFlowStore();
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const { setExecutionState, executionState, updateNodeData, nodeData } = useFlowStore();
   const isRunning = executionState[id] === "running";
-  const result = data.result;
+  
+  // Merge initial data (props) with live store data
+  const currentStoreData = (nodeData[id] || {}) as Partial<RunLLMNodeData>;
+  const currentData = { ...data, ...currentStoreData };
+  const { result, systemUsed, promptUsed } = currentData;
 
   const validateInput = (
-    connection: any,
+    connection: Connection | Edge,
     expectedSourceType: "text" | "image",
   ) => {
     if (expectedSourceType === "text") {
@@ -63,6 +69,13 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
         (e) => e.target === id && e.targetHandle === handleId,
       );
       if (!edge) return null;
+      
+      // Try to get data from global store first (live updates)
+      if (nodeData[edge.source]) {
+         return nodeData[edge.source];
+      }
+
+      // Fallback to ReactFlow node data
       const sourceNode = nodes.find((n) => n.id === edge.source);
       return sourceNode?.data;
     };
@@ -71,28 +84,75 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     const promptData = getSourceData("prompt");
     const imageData = getSourceData("image1");
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    const systemText = (systemData ? (systemData as any).text : "") as string;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    const promptText = (promptData ? (promptData as any).text : "") as string;
+    // Helper safely extract text string
+    const safeGetText = (obj: unknown): string => {
+      if (typeof obj === "object" && obj !== null && "text" in obj) {
+        const val = (obj as Record<string, unknown>).text;
+        return typeof val === "string" ? val : "";
+      }
+      return "";
+    };
+
+    const systemText = safeGetText(systemData);
+    const promptText = safeGetText(promptData);
 
     setExecutionState(id, "running");
+
+    // Update the node data with what we are about to allow user inspection
+    updateNodeData(id, { 
+        systemUsed: systemText, 
+        promptUsed: promptText,
+        result: undefined // clear previous result
+    });
 
     try {
       const { triggerLLMRun } = await import("~/app/actions");
 
-      await triggerLLMRun({
+      // Trigger and Poll for result
+      const runResult = await triggerLLMRun({
         system: systemText,
         prompt: promptText,
         image: imageData,
       });
 
-      await new Promise((r) => setTimeout(r, 2000));
+      // Check if task failed or has error
+      if (runResult.error) {
+         const err = runResult.error as { message?: string };
+         const errorMessage = err.message ?? "Task failed";
+         throw new Error(errorMessage);
+      }
+      
+      const output = runResult.output as { result?: string } | undefined;
 
-      updateNodeData(id, { result: "Hello, this is the response form AI" });
+       // Check for valid output
+      if (!output?.result) {
+         console.warn("AI returned empty result", runResult);
+         toast.error("AI response generation failed: Recieved empty response", {
+            description: "Please try again or check your prompt."
+         });
+          setExecutionState(id, "failed");
+          return;
+      }
+
+      const aiText = output.result;
+
+      updateNodeData(id, { 
+        result: aiText,
+        // Keeping inputs in data so they persist in UI
+        systemUsed: systemText,
+        promptUsed: promptText
+      });
       setExecutionState(id, "completed");
+      toast.success("AI Generation Complete");
+
     } catch (error) {
-      console.error(error);
+      console.error("RunLLM execution error:", error);
+      let message = "Unknown error occurred";
+      if (error instanceof Error) message = error.message;
+
+      toast.error("AI Generation Failed", {
+          description: message
+      });
       setExecutionState(id, "failed");
     }
   };
@@ -129,24 +189,10 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       </div>
 
       {/* Main Body */}
-      <div className="relative flex min-h-[120px] flex-col p-4">
+      <div className="relative flex min-h-[120px] flex-col p-4 gap-3">
         
-        {/* Input Handles - Positioned absolutely on the left to "plug in" */}
-        {/* We stack them vertically: System, User, Image */}
+        {/* Input Handles */}
         <div className="absolute -left-3 top-4 flex flex-col gap-6"> 
-           {/* Gap 6 approximates spacing for connections if wires are coming in */}
-           
-           {/* System Prompt Handle */}
-           <Handle
-            type="target"
-            position={Position.Left}
-            id="system"
-            className="!relative !left-0 !h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-gray-500"
-            isValidConnection={(c) => validateInput(c, "text")}
-            isConnectable={systemConnections.length === 0}
-          />
-          
-          {/* User Prompt Handle */}
            <Handle
             type="target"
             position={Position.Left}
@@ -154,20 +200,47 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
             className="!relative !left-0 !h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-gray-500"
             isValidConnection={(c) => validateInput(c, "text")}
             isConnectable={promptConnections.length === 0}
+            title="User Prompt"
           />
-
-          {/* Image Handle */}
            <Handle
             type="target"
             position={Position.Left}
-            id="image1"
+            id="system"
+            className="!relative !left-0 !h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-gray-500"
+            isValidConnection={(c) => validateInput(c, "text")}
+            isConnectable={systemConnections.length === 0}
+            title="System Prompt"
+          />
+           <Handle
+            type="target"
+            position={Position.Left}
+            id="image1" // Kept as image1 based on previous code, mapped to image payload
             className="!relative !left-0 !h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-indigo-500"
             isValidConnection={(c) => validateInput(c, "image")}
             isConnectable={imageConnections.length === 0}
+            title="Image"
           />
         </div>
 
-        {/* Content Area */}
+        {/* Info Section (System & User Used) */}
+        {(!!systemUsed || !!promptUsed) && (
+            <div className="flex flex-col gap-2 rounded bg-white/5 p-2 mb-2 text-xs">
+                 {systemUsed && (
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase text-gray-500 font-semibold">System</span>
+                        <span className="text-gray-300 line-clamp-2" title={systemUsed}>{systemUsed}</span>
+                    </div>
+                 )}
+                 {promptUsed && (
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase text-gray-500 font-semibold">User</span>
+                        <span className="text-gray-300 line-clamp-2" title={promptUsed}>{promptUsed}</span>
+                    </div>
+                 )}
+            </div>
+        )}
+
+        {/* Result Area */}
         <div className={cn(
             "h-full w-full rounded bg-black/50 p-3 font-mono text-sm leading-relaxed",
             result ? "text-gray-300" : "text-gray-600 italic"

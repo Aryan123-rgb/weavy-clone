@@ -1,16 +1,48 @@
-import { task, wait } from "@trigger.dev/sdk/v3";
+import { task } from "@trigger.dev/sdk/v3";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runLLMTask = task({
   id: "run-llm-task",
-  // Set an optional maxDuration to prevent it from running indefinitely
+  retry: {
+    maxAttempts: 1, // Disable retries as requested
+  },
   run: async (payload: { prompt: string; system?: string; image?: any }) => {
-    console.log("Running LLM Task with payload:", payload);
 
-    // Simulate 10 second timeout
-    await wait.for({ seconds: 10 });
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_API_KEY Not set");
+    }
 
-    return {
-      result: "Hello, this is the response form AI",
-    };
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+
+      // Use system instruction if available in SDK, or fallback to prepending
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: payload.system ? {
+          role: "system",
+          parts: [{ text: payload.system }]
+        } : undefined
+      });
+
+      const parts: any[] = [];
+
+      // Add text prompt
+      parts.push({ text: payload.prompt });
+
+      // TODO: Handle image if payload.image is provided structure suitable for Gemini
+      // if (payload.image) ...
+
+      const result = await model.generateContent(parts);
+      const response = await result.response;
+      const text = response.text();
+
+      return {
+        result: text,
+      };
+    } catch (error) {
+      console.error("Gemini AI generation failed:", error);
+      throw error; // Throwing ensures task fails and we catch it in polling
+    }
   },
 });
