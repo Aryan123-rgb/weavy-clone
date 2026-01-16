@@ -48,7 +48,7 @@ export const extractFrameTask = task({
                     })
                     .on("error", (err) => {
                         console.error("Frame extraction failed", err);
-                        reject(new Error("Failed to extract frame"))
+                        reject(new Error("Failed to extract frame", { cause: err }))
                     })
                     .run();
             });

@@ -6,7 +6,7 @@ import {
   useReactFlow,
   useHandleConnections,
 } from "@xyflow/react";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import type { Node, NodeProps, Connection, Edge } from "@xyflow/react";
 import { Smartphone, Loader2 } from "lucide-react";
 import { cn } from "~/lib/utils";
@@ -33,25 +33,12 @@ export function ExtractVideoFrameNode({
   // Timestamp input (seconds)
   const [timestamp, setTimestamp] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [triggerId, setTriggerId] = useState<string | null>(null);
+  const [extractedImageUrl, setExtractedImageUrl] = useState<string | null>(
+    null,
+  );
 
   // TRPC Mutations
   const extractMutation = api.workflow.extractFrame.useMutation();
-
-  // Polling Status
-  // We use useQuery with refetchInterval to handle polling automatically
-  const { data: statusData, error: statusError } =
-    api.workflow.getExtractionStatus.useQuery(
-      { triggerId: triggerId! },
-      {
-        enabled: !!triggerId,
-        refetchInterval: (data) => {
-          // Stop polling if completed or failed
-          if (!data) return false;
-          return 3000; // Poll every 3 seconds
-        },
-      },
-    );
 
   // Input connection tracking
   const connections = useHandleConnections({ type: "target", id: "video" });
@@ -92,50 +79,7 @@ export function ExtractVideoFrameNode({
     return connection.sourceHandle === "video";
   };
 
-  // Handle Polling Results via Effect
-  useEffect(() => {
-    if (!statusData) return;
-
-    console.log("Polling status:", statusData);
-
-    if (statusData.status === "COMPLETED") {
-      setIsProcessing(false);
-      setTriggerId(null);
-
-      if (
-        statusData.output &&
-        typeof statusData.output === "object" &&
-        "imageUrl" in statusData.output
-      ) {
-        const resultUrl = (statusData.output as { imageUrl: string }).imageUrl;
-        updateNodeData(id, { imageUrl: resultUrl });
-        toast.success("Frame Extracted Successfully");
-      } else {
-        toast.error("Task completed but no image URL returned");
-      }
-    } else if (
-      statusData.status === "FAILED" ||
-      statusData.status === "CANCELED" ||
-      statusData.status === "TIMED_OUT" ||
-      statusData.status === "CRASHED"
-    ) {
-      setIsProcessing(false);
-      setTriggerId(null);
-      const errorMessage = statusData.error?.message || "Unknown error";
-      toast.error(`Extraction Failed: ${errorMessage}`);
-    }
-    // If QUEUED/EXECUTING/WAITING_FOR_DEPLOY, do nothing, just wait for next poll
-  }, [statusData, id, updateNodeData]);
-
-  // Handle manual polling errors
-  useEffect(() => {
-    if (statusError) {
-      console.error("Polling error", statusError);
-      // Optional: Retry logic or just log
-    }
-  }, [statusError]);
-
-  const handleExtract = async () => {
+  const handleExtract = () => {
     if (!canExtract) {
       if (!liveVideoUrl?.includes("cloudinary.com")) {
         toast.error("Video must be uploaded to Cloudinary first.");
@@ -150,19 +94,25 @@ export function ExtractVideoFrameNode({
     }
 
     setIsProcessing(true);
-    toast.info("Starting extraction...");
+    toast.info("Extracting frame...");
 
     extractMutation.mutate(
       { liveVideoUrl, timestamp },
       {
         onSuccess: (data) => {
-          console.log("Task initiated, triggerId:", data.triggerId);
-          setTriggerId(data.triggerId);
-          toast.loading("Extracting frame via Trigger.dev...");
+          setIsProcessing(false);
+          if (data.imageUrl) {
+            // Update local state for immediate feedback
+            setExtractedImageUrl(data.imageUrl);
+            // Update global flow state
+            updateNodeData(id, { imageUrl: data.imageUrl });
+
+            toast.success("Frame Extracted Successfully");
+          }
         },
         onError: (error) => {
-          console.error("Trigger error:", error);
-          toast.error(`Failed to start extraction: ${error.message}`);
+          console.error("Extraction error:", error);
+          toast.error(`Failed to extract frame: ${error.message}`);
           setIsProcessing(false);
         },
       },
@@ -187,7 +137,6 @@ export function ExtractVideoFrameNode({
           </span>
         </div>
       </div>
-
       <div className="flex flex-col gap-4 p-4">
         {/* Input Handle Visualization */}
         <div className="relative">
@@ -208,7 +157,6 @@ export function ExtractVideoFrameNode({
             </span>
           </div>
         </div>
-
         <div className="rounded bg-white/5 p-3">
           <p className="mb-2 text-xs font-semibold text-gray-400">
             Extraction Settings
@@ -231,7 +179,6 @@ export function ExtractVideoFrameNode({
             />
           </div>
         </div>
-
         <button
           onClick={handleExtract}
           disabled={!canExtract}
@@ -251,7 +198,6 @@ export function ExtractVideoFrameNode({
             "Extract Frame"
           )}
         </button>
-
         {!isValidInput && connections.length > 0 && (
           <p className="text-center text-[10px] text-red-400">
             Video not loaded or invalid.
@@ -262,9 +208,8 @@ export function ExtractVideoFrameNode({
             Output must be Cloudinary URL.
           </p>
         )}
-
         {/* Result Preview */}
-        {data.imageUrl && (
+        {extractedImageUrl && (
           <div className="flex flex-col gap-2">
             <span className="text-[10px] font-bold text-gray-500 uppercase">
               Result
@@ -272,7 +217,7 @@ export function ExtractVideoFrameNode({
             <div className="relative aspect-video w-full overflow-hidden rounded border border-white/10 bg-black/50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={data.imageUrl}
+                src={extractedImageUrl}
                 alt="Extracted"
                 className="h-full w-full object-contain"
               />
@@ -280,7 +225,6 @@ export function ExtractVideoFrameNode({
           </div>
         )}
       </div>
-
       {/* Output Handle */}
       <div className="relative flex h-10 items-center justify-end border-t border-white/5 bg-[#222] px-4">
         <span className="mr-2 text-xs text-gray-500">image</span>
