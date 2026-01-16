@@ -1,13 +1,14 @@
 "use client";
 
-import { Handle, Position } from "@xyflow/react";
-import React, { useCallback, useState } from "react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import React, { useState, useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import type { Node, NodeProps } from "@xyflow/react";
-import { X, Upload } from "lucide-react";
+import axios from "axios";
+import { X, Upload, CloudUpload } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
+import { env } from "~/env";
 
 // Define the data type for our node
 type UploadImageNodeData = {
@@ -19,48 +20,45 @@ type MyNode = Node<UploadImageNodeData>;
 
 export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
   const { updateNodeData } = useFlowStore();
-  const [imageUrl, setImageUrl] = useState<string | undefined>(data.imageUrl);
+  
+  // State
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    data?.imageUrl || null,
+  );
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Handle file drop - only accepts one image
+  // Dropzone callback
   const onDrop = useCallback(
     (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-      void (async () => {
-        // Handle rejections
-        if (fileRejections.length > 0) {
-          fileRejections.forEach((rejection) => {
-            const errorMsg = rejection.errors[0]?.message ?? "Unknown error";
-            toast.error(`Upload Failed: ${errorMsg}`);
-          });
-          return;
-        }
-
-        const file = acceptedFiles[0];
-        if (file) {
-          // Create a local object URL for preview immediately
-          const objectUrl = URL.createObjectURL(file);
-          setImageUrl(objectUrl);
-
-          try {
-            // Convert to Base64 Data URL
-            const reader = new FileReader();
-            reader.onerror = () => {
-              toast.error("Failed to read file");
-            };
-            reader.onload = () => {
-              const base64String = reader.result as string;
-              // Update global flow store with the base64 string
-              updateNodeData(id, { imageUrl: base64String });
-              toast.success("Image processed (Base64)");
-            };
-            reader.readAsDataURL(file);
-          } catch (error) {
-            console.error("File reading error:", error);
-            toast.error("Failed to process file");
+      // Handle rejections
+      if (fileRejections.length > 0) {
+        fileRejections.forEach((rejection) => {
+          const errorCode = rejection.errors[0]?.code;
+          if (errorCode === "file-too-large") {
+            toast.error("File is too large", {
+              description: "Image must be less than 10MB",
+            });
+          } else if (errorCode === "file-invalid-type") {
+            toast.error("Invalid file type", {
+              description: "Only JPG, PNG, WEBP, and GIF are allowed",
+            });
+          } else {
+            const message = rejection.errors[0]?.message ?? "Unknown error";
+            toast.error(`Upload Failed: ${message}`);
           }
+        });
+        return;
+      }
 
-          console.log("File dropped:", file);
-        }
-      })();
+      const selectedFile = acceptedFiles[0];
+      if (selectedFile) {
+        setFile(selectedFile);
+        const objectUrl = URL.createObjectURL(selectedFile);
+        setPreviewUrl(objectUrl);
+        // Clear the node data url until uploaded to avoid stale/base64 data
+        updateNodeData(id, { imageUrl: "" });
+      }
     },
     [id, updateNodeData],
   );
@@ -74,25 +72,58 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
       "image/gif": [],
     },
     maxSize: 10 * 1024 * 1024, // 10MB
+    maxFiles: 1,
     multiple: false,
-    onDropRejected: (fileRejections) => {
-      fileRejections.forEach((rejection) => {
-        const errorCode = rejection.errors[0]?.code;
-        if (errorCode === "file-too-large") {
-          toast.error("File is too large", {
-            description: "Image must be less than 10MB",
-          });
-        } else {
-          const message = rejection.errors[0]?.message ?? "Unknown error";
-          toast.error(`Upload Failed: ${message}`);
-        }
-      });
-    },
   });
+
+  const handleCloudUpload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!file) return;
+
+    setIsUploading(true);
+    toast.info("Uploading to cloud...");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append(
+      "upload_preset",
+      env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
+    );
+
+    try {
+      const cloudName = env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const response = await axios.post(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        formData,
+      );
+
+      const resultUrl = response.data.secure_url;
+      
+      updateNodeData(id, {
+        imageUrl: resultUrl,
+      });
+      
+      // Update preview and clear local file
+      setPreviewUrl(resultUrl);
+      setFile(null);
+      toast.success("Upload Successful");
+    } catch (error) {
+      console.error("Upload error:", error);
+      if (axios.isAxiosError(error)) {
+        toast.error(`Upload Failed: ${error.response?.data?.error?.message || error.message}`);
+      } else {
+        toast.error("Upload Failed: Unknown error");
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const clearImage = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setImageUrl(undefined);
+    setFile(null);
+    setPreviewUrl(null);
+    updateNodeData(id, { imageUrl: undefined });
   };
 
   return (
@@ -113,11 +144,11 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
 
       {/* Content Area */}
       <div className="flex min-h-[150px] flex-col items-center justify-center p-4">
-        {imageUrl ? (
+        {previewUrl ? (
           <div className="group/image relative aspect-video w-full overflow-hidden rounded-lg border border-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={imageUrl}
+              src={previewUrl}
               alt="Uploaded"
               className="h-full w-full object-cover"
             />
@@ -150,6 +181,7 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
                 ? "Drop image here..."
                 : "Drag & drop or click to upload"}
             </p>
+            <p className="mt-1 text-[10px] text-gray-600">Max 10MB</p>
           </div>
         )}
       </div>
@@ -164,6 +196,28 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
           className="!h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-[#E0FC00]"
         />
       </div>
+
+       {/* Footer / Actions */}
+       {file && !isUploading && (
+        <div className="flex items-center justify-center border-t border-white/5 bg-[#222] p-2">
+          <button
+            onClick={handleCloudUpload}
+            className="flex items-center gap-2 rounded bg-[#E0FC00] px-3 py-1.5 text-xs font-bold text-black uppercase transition-colors hover:bg-[#cbe600]"
+          >
+            <CloudUpload className="h-3 w-3" />
+            Upload to Cloud
+          </button>
+        </div>
+      )}
+
+      {isUploading && (
+        <div className="flex items-center justify-center border-t border-white/5 bg-[#222] p-2">
+          <span className="flex items-center gap-2 text-xs text-[#E0FC00]">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Uploading...
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -22,10 +22,14 @@ export const env = createEnv({
    * `NEXT_PUBLIC_`.
    */
   client: {
-    // NEXT_PUBLIC_CLIENTVAR: z.string(),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string(),
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string(),
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string(),
+    NEXT_PUBLIC_TRANSLOADIT_TEMPLATE_ID: z.string(),
+    NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY: z.string(),
+    NEXT_PUBLIC_TRANSLOADIT_AUTH_SECRET: z.string(),
+    NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: z.string(),
+    NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET: z.string(),
   },
 
   /**
@@ -42,6 +46,11 @@ export const env = createEnv({
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL,
+    NEXT_PUBLIC_TRANSLOADIT_TEMPLATE_ID: process.env.NEXT_PUBLIC_TRANSLOADIT_TEMPLATE_ID,
+    NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY: process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY,
+    NEXT_PUBLIC_TRANSLOADIT_AUTH_SECRET: process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_SECRET,
+    NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+    NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
@@ -51,6 +60,6 @@ export const env = createEnv({
   /**
    * Makes it so that empty strings are treated as undefined. `SOME_VAR: z.string()` and
    * `SOME_VAR=''` will throw an error.
-   */
+   */ 
   emptyStringAsUndefined: true,
 });

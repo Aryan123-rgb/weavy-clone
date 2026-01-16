@@ -1,13 +1,14 @@
 "use client";
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import { X, FileVideo, FileAudio, ImageIcon } from "lucide-react";
-import Image from "next/image";
+import axios from "axios";
+import { X, FileVideo, CloudUpload } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
+import { env } from "~/env";
 
 // Define the data type for our node
 type UploadVideoNodeData = {
@@ -18,70 +19,51 @@ type UploadVideoNodeData = {
 
 type MyNode = Node<UploadVideoNodeData>;
 
-export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
+export function UploadVideoNode({
+  data = {},
+  selected,
+  id,
+}: NodeProps<MyNode>) {
   const { updateNodeData } = useFlowStore();
-  // Manage video URL and type state locally
-  const [mediaUrl, setMediaUrl] = useState<string | undefined>(data.mediaUrl);
-  const [mediaType, setMediaType] = useState<string | undefined>(
-    data.mediaType,
+
+  // State
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    data?.mediaUrl || null,
   );
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Sync local state with data prop if it changes externally
-  useEffect(() => {
-    setMediaUrl(data.mediaUrl);
-    setMediaType(data.mediaType);
-  }, [data.mediaUrl, data.mediaType]);
-
+  // Dropzone callback
   const onDrop = useCallback(
     (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-      void (async () => {
-        // Handle rejections
-        if (fileRejections.length > 0) {
-          fileRejections.forEach((rejection) => {
-            const errorMessage = rejection.errors[0]?.message ?? "Unknown error";
-            toast.error(`Upload Failed: ${errorMessage}`);
-          });
-          return;
-        }
-
-        const file = acceptedFiles[0];
-        if (file) {
-          setIsProcessing(true);
-          // Create a local object URL for preview immediately
-          const objectUrl = URL.createObjectURL(file);
-          setMediaUrl(objectUrl);
-          setMediaType(file.type);
-
-          toast.info("Processing file...");
-
-          try {
-            // Convert to Base64 Data URL
-            const reader = new FileReader();
-            reader.onerror = () => {
-              toast.error("Failed to read file");
-              setIsProcessing(false);
-            };
-            reader.onload = () => {
-              const base64String = reader.result as string;
-              // Update global flow store with the base64 string
-              updateNodeData(id, {
-                mediaUrl: base64String,
-                mediaType: file.type,
-              });
-              toast.success("File processed successfully");
-              setIsProcessing(false);
-            };
-            reader.readAsDataURL(file);
-          } catch (error) {
-            console.error("File reading error:", error);
-            toast.error("Failed to process file");
-            setIsProcessing(false);
+      // Handle rejections
+      if (fileRejections.length > 0) {
+        fileRejections.forEach((rejection) => {
+          const errorCode = rejection.errors[0]?.code;
+          if (errorCode === "file-too-large") {
+            toast.error("File is too large", {
+              description: "Video must be less than 100MB",
+            });
+          } else if (errorCode === "file-invalid-type") {
+            toast.error("Invalid file type", {
+              description: "Only MP4 and WebM are allowed",
+            });
+          } else {
+            const message = rejection.errors[0]?.message ?? "Unknown error";
+            toast.error(`Upload Failed: ${message}`);
           }
+        });
+        return;
+      }
 
-          console.log("File dropped:", file);
-        }
-      })();
+      const selectedFile = acceptedFiles[0];
+      if (selectedFile) {
+        setFile(selectedFile);
+        const objectUrl = URL.createObjectURL(selectedFile);
+        setPreviewUrl(objectUrl);
+        // Clear the node data url until uploaded
+        updateNodeData(id, { mediaUrl: "" });
+      }
     },
     [id, updateNodeData],
   );
@@ -90,70 +72,62 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
     onDrop,
     accept: {
       "video/mp4": [],
-      "audio/mpeg": [],
-      "image/webp": [],
+      "video/webm": [],
     },
     maxSize: 100 * 1024 * 1024, // 100MB
+    maxFiles: 1,
     multiple: false,
-    disabled: isProcessing,
-    onDropRejected: (fileRejections) => {
-      fileRejections.forEach((rejection) => {
-        const errorCode = rejection.errors[0]?.code;
-        if (errorCode === "file-too-large") {
-          toast.error("File is too large");
-        } else {
-          const message = rejection.errors[0]?.message ?? "Unknown error";
-          toast.error(`Upload Failed: ${message}`);
-        }
-      });
-    },
   });
+
+  const handleCloudUpload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!file) return;
+
+    setIsUploading(true);
+    toast.info("Uploading to cloud...");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append(
+      "upload_preset",
+      env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
+    );
+
+    try {
+      const cloudName = env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const response = await axios.post(
+        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+        formData,
+      );
+
+      const resultUrl = response.data.secure_url;
+      
+      updateNodeData(id, {
+        mediaUrl: resultUrl,
+        mediaType: "video/mp4", // Or detect from file.type
+      });
+      
+      // Update preview to the cloud URL
+      setPreviewUrl(resultUrl);
+      setFile(null); // Clear local file after successful upload
+      toast.success("Upload Successful");
+    } catch (error) {
+      console.error("Upload error:", error);
+      if (axios.isAxiosError(error)) {
+        toast.error(`Upload Failed: ${error.response?.data?.error?.message || error.message}`);
+      } else {
+        toast.error("Upload Failed: Unknown error");
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const clearMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setMediaUrl(undefined);
-    setMediaType(undefined);
+    setFile(null);
+    setPreviewUrl(null);
     updateNodeData(id, { mediaUrl: undefined, mediaType: undefined });
-  };
-
-  const renderMediaPreview = () => {
-    if (!mediaUrl) return null;
-
-    // Check media type (either from state or sniff from data url)
-    // ensure type is always a string
-    const mimeFromData = mediaUrl.startsWith("data:")
-      ? mediaUrl.split(";")[0]?.split(":")[1]
-      : "";
-    const type = mediaType ?? mimeFromData ?? "";
-
-    if (type.startsWith("video/")) {
-      return (
-        <video
-          src={mediaUrl}
-          controls
-          className="h-full w-full bg-black object-contain"
-        />
-      )
-    } else if (type.startsWith("audio/")) {
-      return (
-        <div className="flex h-full w-full items-center justify-center bg-[#111]">
-          <audio src={mediaUrl} controls className="w-[90%]" />
-        </div>
-      );
-    } else if (type.startsWith("image/")) {
-      return (
-        <Image
-          src={mediaUrl}
-          alt="Uploaded"
-          fill
-          className="object-contain"
-          unoptimized
-        />
-      );
-    }
-
-    // Fallback
-    return <div className="text-white">Unsupported media type</div>;
   };
 
   return (
@@ -170,18 +144,17 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
         <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
           {data.label ?? "Upload Video"}
         </span>
-        {isProcessing && (
-          <span className="animate-pulse text-xs text-[#E0FC00]">
-            Processing...
-          </span>
-        )}
       </div>
 
       {/* Content Area */}
       <div className="flex min-h-[150px] flex-col items-center justify-center bg-black/20 p-4">
-        {mediaUrl ? (
+        {previewUrl ? (
           <div className="group/image relative aspect-video w-full overflow-hidden rounded-lg border border-white/10 bg-black">
-            {renderMediaPreview()}
+            <video
+              src={previewUrl}
+              controls
+              className="h-full w-full bg-black object-contain"
+            />
             <button
               onClick={clearMedia}
               className="absolute top-2 right-2 z-10 rounded-full bg-black/50 p-1 opacity-0 transition-colors group-hover/image:opacity-100 hover:bg-red-500/80"
@@ -197,35 +170,17 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
               isDragActive
                 ? "border-[#E0FC00] bg-[#E0FC00]/5"
                 : "hover:border-white/20 hover:bg-white/10",
-              isProcessing && "cursor-not-allowed opacity-50",
             )}
           >
             <input {...getInputProps()} />
             <div className="mb-2 flex gap-2">
-              <FileVideo
-                className={cn(
-                  "h-6 w-6 text-gray-400",
-                  isDragActive && "text-[#E0FC00]",
-                )}
-              />
-              <FileAudio
-                className={cn(
-                  "h-6 w-6 text-gray-400",
-                  isDragActive && "text-[#E0FC00]",
-                )}
-              />
-              <ImageIcon
-                className={cn(
-                  "h-6 w-6 text-gray-400",
-                  isDragActive && "text-[#E0FC00]",
-                )}
-              />
+              <FileVideo className={cn("h-6 w-6 text-gray-400", isDragActive && "text-[#E0FC00]")} />
             </div>
 
             <p className="px-4 text-center text-xs text-gray-400">
-              {isDragActive
-                ? "Drop file here..."
-                : "Drag & drop mp4, mp3 or webp"}
+               {isDragActive
+                ? "Drop video here..."
+                : "Drag & drop or click to upload"}
             </p>
             <p className="mt-1 text-[10px] text-gray-600">Max 100MB</p>
           </div>
@@ -242,6 +197,28 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
           className="!h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-[#E0FC00]"
         />
       </div>
+
+      {/* Footer / Actions */}
+      {file && !isUploading && (
+        <div className="flex items-center justify-center border-t border-white/5 bg-[#222] p-2">
+          <button
+            onClick={handleCloudUpload}
+            className="flex items-center gap-2 rounded bg-[#E0FC00] px-3 py-1.5 text-xs font-bold text-black uppercase transition-colors hover:bg-[#cbe600]"
+          >
+            <CloudUpload className="h-3 w-3" />
+            Upload to Cloud
+          </button>
+        </div>
+      )}
+
+      {isUploading && (
+        <div className="flex items-center justify-center border-t border-white/5 bg-[#222] p-2">
+          <span className="flex items-center gap-2 text-xs text-[#E0FC00]">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Uploading...
+          </span>
+        </div>
+      )}
     </div>
   );
 }
