@@ -47,7 +47,7 @@ const TOOL_ITEMS = [
     id: "upload-video",
     label: "Upload Video",
     icon: Video,
-    type: "text", // Placeholder changed to text
+    type: "upload-video",
   },
   {
     id: "extract-frame",

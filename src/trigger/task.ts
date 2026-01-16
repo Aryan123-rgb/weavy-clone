@@ -1,5 +1,4 @@
 import { task } from "@trigger.dev/sdk/v3";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "~/env"
 
 export const runLLMTask = task({
@@ -8,6 +7,17 @@ export const runLLMTask = task({
     maxAttempts: 1, // Disable retries as requested
   },
   run: async (payload: { prompt: string; system?: string; image?: string }) => {
+    
+    // Validation for image URL
+    if (payload.image) {
+      const validExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+      const lowerUrl = payload.image.toLowerCase();
+      const isDataUrl = lowerUrl.startsWith("data:image/");
+
+      if (!isDataUrl) {
+         throw new Error("Invalid image URL: Must be a Base64 Data URL starting with 'data:image/'. HTTP URLs are not supported.");
+      }
+    }
 
     const apiKey = env.GROQ_API_KEY;
 
@@ -25,20 +35,18 @@ export const runLLMTask = task({
         });
       }
 
-      // User Input (Content can be string or array for vision)
+      // User Input
       const userContent: any[] = [{ type: "text", text: payload.prompt }];
 
       // Image Input
-      if (payload.image) {
-        // payload.image is expected to be a data URL or base64 string
-        // Groq/OpenAI format expects data URL
-        userContent.push({
-          type: "image_url",
-          image_url: {
-            url: payload.image,
-          }
-        });
-      }
+      // User requirement: "provide an empty image url if none specified"
+      // using meta-llama/llama-4-scout-17b-16e-instruct
+      userContent.push({
+        type: "image_url",
+        image_url: {
+          url: payload.image || "",
+        }
+      });
 
       messages.push({
         role: "user",
@@ -47,7 +55,7 @@ export const runLLMTask = task({
 
       const completion = await groq.chat.completions.create({
         messages: messages,
-        model: payload.image ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile",
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
       });
 
       const text = completion.choices[0]?.message?.content || "";

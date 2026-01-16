@@ -6,6 +6,8 @@ import { useDropzone } from "react-dropzone";
 import type { Node, NodeProps } from "@xyflow/react";
 import { X, Upload } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { useFlowStore } from "~/store/flowStore";
+import { toast } from "sonner";
 
 // Define the data type for our node
 type UploadImageNodeData = {
@@ -15,38 +17,73 @@ type UploadImageNodeData = {
 
 type MyNode = Node<UploadImageNodeData>;
 
-export function UploadImageNode({ data, selected }: NodeProps<MyNode>) {
+export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
+  const { updateNodeData } = useFlowStore();
   const [imageUrl, setImageUrl] = useState<string | undefined>(data.imageUrl);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      // Create a local object URL for preview
-      const objectUrl = URL.createObjectURL(file);
-      setImageUrl(objectUrl);
+  const onDrop = useCallback(
+    async (acceptedFiles: File[], fileRejections: any[]) => {
+      // Handle rejections
+      if (fileRejections.length > 0) {
+        fileRejections.forEach((rejection) => {
+          toast.error(`Upload Failed: ${rejection.errors[0].message}`);
+        });
+        return;
+      }
 
-      // Convert to Base64/DataURL for passing to other nodes
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result as string;
-        // Update global flow store so connected nodes can access this data
-        // We need to access the store's updateNodeData.
-        // Since we can't easily hook into the store inside this callback without the hook,
-        // we'll trigger an effect or use the hook in the component body.
-      };
-      reader.readAsDataURL(file);
+      const file = acceptedFiles[0];
+      if (file) {
+        // Create a local object URL for preview immediately
+        const objectUrl = URL.createObjectURL(file);
+        setImageUrl(objectUrl);
 
-      console.log("File dropped:", file);
-    }
-  }, []);
+        try {
+          // Convert to Base64 Data URL
+          const reader = new FileReader();
+          reader.onerror = () => {
+            toast.error("Failed to read file");
+          };
+          reader.onload = () => {
+            const base64String = reader.result as string;
+            // Update global flow store with the base64 string
+            updateNodeData(id, { imageUrl: base64String });
+            toast.success("Image processed (Base64)");
+          };
+          reader.readAsDataURL(file);
+        } catch (error) {
+          console.error("File reading error:", error);
+          toast.error("Failed to process file");
+        }
+
+        console.log("File dropped:", file);
+      }
+    },
+    [id, updateNodeData],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      "image/*": [],
+      "image/jpeg": [],
+      "image/png": [],
+      "image/webp": [],
+      "image/gif": [],
     },
-    maxFiles: 1,
+    maxSize: 10 * 1024 * 1024, // 10MB
     multiple: false,
+    onDropRejected: (fileRejections) => {
+      fileRejections.forEach((rejection) => {
+        const errorCode = rejection.errors[0]?.code;
+        if (errorCode === "file-too-large") {
+          toast.error("File is too large", {
+            description: "Image must be less than 10MB",
+          });
+        } else {
+          const message = rejection.errors[0]?.message || "Unknown error";
+          toast.error(`Upload Failed: ${message}`);
+        }
+      });
+    },
   });
 
   const clearImage = (e: React.MouseEvent) => {
