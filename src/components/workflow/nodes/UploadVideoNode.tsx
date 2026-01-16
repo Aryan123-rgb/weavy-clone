@@ -20,6 +20,7 @@ type MyNode = Node<UploadVideoNodeData>;
 
 export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
   const { updateNodeData } = useFlowStore();
+  // Manage video URL and type state locally
   const [mediaUrl, setMediaUrl] = useState<string | undefined>(data.mediaUrl);
   const [mediaType, setMediaType] = useState<string | undefined>(
     data.mediaType,
@@ -33,52 +34,54 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
   }, [data.mediaUrl, data.mediaType]);
 
   const onDrop = useCallback(
-    async (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-      // Handle rejections
-      if (fileRejections.length > 0) {
-        fileRejections.forEach((rejection) => {
-          const errorMessage = rejection.errors[0]?.message || "Unknown error";
-          toast.error(`Upload Failed: ${errorMessage}`);
-        });
-        return;
-      }
-
-      const file = acceptedFiles[0];
-      if (file) {
-        setIsProcessing(true);
-        // Create a local object URL for preview immediately
-        const objectUrl = URL.createObjectURL(file);
-        setMediaUrl(objectUrl);
-        setMediaType(file.type);
-
-        toast.info("Processing file...");
-
-        try {
-          // Convert to Base64 Data URL
-          const reader = new FileReader();
-          reader.onerror = () => {
-            toast.error("Failed to read file");
-            setIsProcessing(false);
-          };
-          reader.onload = () => {
-            const base64String = reader.result as string;
-            // Update global flow store with the base64 string
-            updateNodeData(id, {
-              mediaUrl: base64String,
-              mediaType: file.type,
-            });
-            toast.success("File processed successfully");
-            setIsProcessing(false);
-          };
-          reader.readAsDataURL(file);
-        } catch (error) {
-          console.error("File reading error:", error);
-          toast.error("Failed to process file");
-          setIsProcessing(false);
+    (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+      void (async () => {
+        // Handle rejections
+        if (fileRejections.length > 0) {
+          fileRejections.forEach((rejection) => {
+            const errorMessage = rejection.errors[0]?.message ?? "Unknown error";
+            toast.error(`Upload Failed: ${errorMessage}`);
+          });
+          return;
         }
 
-        console.log("File dropped:", file);
-      }
+        const file = acceptedFiles[0];
+        if (file) {
+          setIsProcessing(true);
+          // Create a local object URL for preview immediately
+          const objectUrl = URL.createObjectURL(file);
+          setMediaUrl(objectUrl);
+          setMediaType(file.type);
+
+          toast.info("Processing file...");
+
+          try {
+            // Convert to Base64 Data URL
+            const reader = new FileReader();
+            reader.onerror = () => {
+              toast.error("Failed to read file");
+              setIsProcessing(false);
+            };
+            reader.onload = () => {
+              const base64String = reader.result as string;
+              // Update global flow store with the base64 string
+              updateNodeData(id, {
+                mediaUrl: base64String,
+                mediaType: file.type,
+              });
+              toast.success("File processed successfully");
+              setIsProcessing(false);
+            };
+            reader.readAsDataURL(file);
+          } catch (error) {
+            console.error("File reading error:", error);
+            toast.error("Failed to process file");
+            setIsProcessing(false);
+          }
+
+          console.log("File dropped:", file);
+        }
+      })();
     },
     [id, updateNodeData],
   );
@@ -97,11 +100,9 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
       fileRejections.forEach((rejection) => {
         const errorCode = rejection.errors[0]?.code;
         if (errorCode === "file-too-large") {
-          toast.error("File is too large", {
-            description: "Video/media must be less than 100MB",
-          });
+          toast.error("File is too large");
         } else {
-          const message = rejection.errors[0]?.message || "Unknown error";
+          const message = rejection.errors[0]?.message ?? "Unknown error";
           toast.error(`Upload Failed: ${message}`);
         }
       });
@@ -132,7 +133,7 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
           controls
           className="h-full w-full bg-black object-contain"
         />
-      );
+      )
     } else if (type.startsWith("audio/")) {
       return (
         <div className="flex h-full w-full items-center justify-center bg-[#111]">
@@ -167,7 +168,7 @@ export function UploadVideoNode({ data, selected, id }: NodeProps<MyNode>) {
       {/* Header */}
       <div className="flex h-10 items-center justify-between border-b border-white/5 bg-[#222] px-4 py-2">
         <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
-          {data.label || "Upload Video"}
+          {data.label ?? "Upload Video"}
         </span>
         {isProcessing && (
           <span className="animate-pulse text-xs text-[#E0FC00]">

@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "~/components/ui/sonner";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -26,6 +27,7 @@ export default function RootLayout({
       <html lang="en" className={`${geist.variable} dark`}>
         <body>
           <TRPCReactProvider>{children}</TRPCReactProvider>
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

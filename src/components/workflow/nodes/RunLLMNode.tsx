@@ -25,7 +25,7 @@ type MyNode = Node<RunLLMNodeData>;
 export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
   const { getEdges, getNodes } = useReactFlow();
 
-  // Track connections
+  // Track connections to enable/disable handles or show status
   const systemConnections = useHandleConnections({
     type: "target",
     id: "system",
@@ -44,7 +44,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
   const isRunning = executionState[id] === "running";
 
   // Merge initial data (props) with live store data
-  const currentStoreData = (nodeData[id] || {}) as Partial<RunLLMNodeData>;
+  const currentStoreData = (nodeData[id] ?? {}) as Partial<RunLLMNodeData>;
   const currentData = { ...data, ...currentStoreData };
   const { result, systemUsed, promptUsed, imageUsed } = currentData;
 
@@ -77,6 +77,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     const edges = getEdges();
     const nodes = getNodes();
 
+    // Gather inputs from connected nodes
     const getSourceData = (handleId: string) => {
       const edge = edges.find(
         (e) => e.target === id && e.targetHandle === handleId,

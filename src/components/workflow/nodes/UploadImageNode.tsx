@@ -2,7 +2,7 @@
 
 import { Handle, Position } from "@xyflow/react";
 import React, { useCallback, useState } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import type { Node, NodeProps } from "@xyflow/react";
 import { X, Upload } from "lucide-react";
 import { cn } from "~/lib/utils";
@@ -21,42 +21,46 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
   const { updateNodeData } = useFlowStore();
   const [imageUrl, setImageUrl] = useState<string | undefined>(data.imageUrl);
 
+  // Handle file drop - only accepts one image
   const onDrop = useCallback(
-    async (acceptedFiles: File[], fileRejections: any[]) => {
-      // Handle rejections
-      if (fileRejections.length > 0) {
-        fileRejections.forEach((rejection) => {
-          toast.error(`Upload Failed: ${rejection.errors[0].message}`);
-        });
-        return;
-      }
-
-      const file = acceptedFiles[0];
-      if (file) {
-        // Create a local object URL for preview immediately
-        const objectUrl = URL.createObjectURL(file);
-        setImageUrl(objectUrl);
-
-        try {
-          // Convert to Base64 Data URL
-          const reader = new FileReader();
-          reader.onerror = () => {
-            toast.error("Failed to read file");
-          };
-          reader.onload = () => {
-            const base64String = reader.result as string;
-            // Update global flow store with the base64 string
-            updateNodeData(id, { imageUrl: base64String });
-            toast.success("Image processed (Base64)");
-          };
-          reader.readAsDataURL(file);
-        } catch (error) {
-          console.error("File reading error:", error);
-          toast.error("Failed to process file");
+    (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+      void (async () => {
+        // Handle rejections
+        if (fileRejections.length > 0) {
+          fileRejections.forEach((rejection) => {
+            const errorMsg = rejection.errors[0]?.message ?? "Unknown error";
+            toast.error(`Upload Failed: ${errorMsg}`);
+          });
+          return;
         }
 
-        console.log("File dropped:", file);
-      }
+        const file = acceptedFiles[0];
+        if (file) {
+          // Create a local object URL for preview immediately
+          const objectUrl = URL.createObjectURL(file);
+          setImageUrl(objectUrl);
+
+          try {
+            // Convert to Base64 Data URL
+            const reader = new FileReader();
+            reader.onerror = () => {
+              toast.error("Failed to read file");
+            };
+            reader.onload = () => {
+              const base64String = reader.result as string;
+              // Update global flow store with the base64 string
+              updateNodeData(id, { imageUrl: base64String });
+              toast.success("Image processed (Base64)");
+            };
+            reader.readAsDataURL(file);
+          } catch (error) {
+            console.error("File reading error:", error);
+            toast.error("Failed to process file");
+          }
+
+          console.log("File dropped:", file);
+        }
+      })();
     },
     [id, updateNodeData],
   );
@@ -79,7 +83,7 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
             description: "Image must be less than 10MB",
           });
         } else {
-          const message = rejection.errors[0]?.message || "Unknown error";
+          const message = rejection.errors[0]?.message ?? "Unknown error";
           toast.error(`Upload Failed: ${message}`);
         }
       });
@@ -103,7 +107,7 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
       {/* Header */}
       <div className="flex h-10 items-center justify-between border-b border-white/5 bg-[#222] px-4 py-2">
         <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
-          {data.label || "Upload Image"}
+          {data.label ?? "Upload Image"}
         </span>
       </div>
 

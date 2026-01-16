@@ -22,6 +22,7 @@ import { UploadImageNode } from "./nodes/UploadImageNode";
 import { CropImageNode } from "./nodes/CropImageNode";
 import { RunLLMNode } from "./nodes/RunLLMNode";
 import { UploadVideoNode } from "./nodes/UploadVideoNode";
+import { ExtractVideoFrameNode } from "./nodes/ExtractVideoFrameNode";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -33,6 +34,7 @@ const nodeTypes = {
   "crop-image": CropImageNode,
   "run-llm": RunLLMNode,
   "upload-video": UploadVideoNode,
+  "extract-frame": ExtractVideoFrameNode,
 };
 
 /**

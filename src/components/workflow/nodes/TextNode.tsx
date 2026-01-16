@@ -30,7 +30,8 @@ type TextNodeData = {
 type MyNode = Node<TextNodeData>;
 
 export function TextNode({ data, selected, id }: NodeProps<MyNode>) {
-  const [text, setText] = useState(data.text || "");
+  // Local state for text input
+  const [text, setText] = useState(data.text ?? "");
 
   // Access global store to update node data
   const updateNodeData = useFlowStore((state) => state.updateNodeData);
@@ -54,7 +55,7 @@ export function TextNode({ data, selected, id }: NodeProps<MyNode>) {
       {/* Header Strip with Handle for Dragging */}
       <div className="flex h-10 items-center justify-between border-b border-white/5 bg-[#222] px-4 py-2">
         <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
-          {data.label || "Text"}
+          {data.label ?? "Text"}
         </span>
         {/* Visual grip handle */}
         <GripHorizontal className="h-4 w-4 text-gray-600" />
@@ -80,7 +81,7 @@ export function TextNode({ data, selected, id }: NodeProps<MyNode>) {
           position={Position.Right}
           id="text"
           className="!h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-[#E0FC00]"
-          isValidConnection={(connection) => {
+          isValidConnection={() => {
             // Validation: Output is generic text
             return true;
           }}

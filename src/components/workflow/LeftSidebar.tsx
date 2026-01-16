@@ -53,7 +53,7 @@ const TOOL_ITEMS = [
     id: "extract-frame",
     label: "Extract Frame",
     icon: Smartphone,
-    type: "text", // Placeholder changed to text
+    type: "extract-frame",
   },
   {
     id: "run-llm",
