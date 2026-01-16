@@ -6,17 +6,18 @@ import {
   useReactFlow,
   useHandleConnections,
 } from "@xyflow/react";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { Node, NodeProps, Connection, Edge } from "@xyflow/react";
-import { Smartphone } from "lucide-react";
+import { Smartphone, Loader2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
+import { api } from "~/trpc/react";
 
 // Define the data type for our node
 type ExtractVideoFrameNodeData = {
   label?: string;
-  imageUrl?: string; // The output extracted frame (Base64)
+  imageUrl?: string; // The output extracted frame (Cloudinary URL)
 };
 
 type MyNode = Node<ExtractVideoFrameNodeData>;
@@ -32,6 +33,25 @@ export function ExtractVideoFrameNode({
   // Timestamp input (seconds)
   const [timestamp, setTimestamp] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [triggerId, setTriggerId] = useState<string | null>(null);
+
+  // TRPC Mutations
+  const extractMutation = api.workflow.extractFrame.useMutation();
+
+  // Polling Status
+  // We use useQuery with refetchInterval to handle polling automatically
+  const { data: statusData, error: statusError } =
+    api.workflow.getExtractionStatus.useQuery(
+      { triggerId: triggerId! },
+      {
+        enabled: !!triggerId,
+        refetchInterval: (data) => {
+          // Stop polling if completed or failed
+          if (!data) return false;
+          return 3000; // Poll every 3 seconds
+        },
+      },
+    );
 
   // Input connection tracking
   const connections = useHandleConnections({ type: "target", id: "video" });
@@ -50,7 +70,7 @@ export function ExtractVideoFrameNode({
     // Try store first (live data)
     if (nodeData[edge.source]) {
       const sourceData = nodeData[edge.source] as Record<string, unknown>;
-      return (sourceData.mediaUrl ?? sourceData.video) as string | undefined; // Support conventions
+      return (sourceData.mediaUrl ?? sourceData.video) as string | undefined;
     }
 
     // Fallback to node data
@@ -59,67 +79,94 @@ export function ExtractVideoFrameNode({
     return (sData?.mediaUrl ?? sData?.video) as string | undefined;
   };
 
-  const validateInput = (connection: Connection | Edge) => {
-    // connection.sourceHandle is the ID of the handle on the source node
-    const sourceHandleId = connection.sourceHandle;
+  const liveVideoUrl = getInputVideo();
+  const isValidInput =
+    !!liveVideoUrl &&
+    (liveVideoUrl.startsWith("http") || liveVideoUrl.startsWith("blob:"));
 
-    // Only allow connection if the source handle is explicitly a video output
-    if (sourceHandleId === "video") return true;
-    return false;
+  // Requirement: Enable button only when URL is provided.
+  const canExtract =
+    isValidInput && liveVideoUrl.includes("cloudinary.com") && !isProcessing;
+
+  const validateInput = (connection: Connection | Edge) => {
+    return connection.sourceHandle === "video";
   };
 
-  const handleExtract = async () => {
-    const inputVideo = getInputVideo();
+  // Handle Polling Results via Effect
+  useEffect(() => {
+    if (!statusData) return;
 
-    if (!inputVideo || typeof inputVideo !== "string") {
-      toast.error("No input video detected", {
-        description:
-          "Please connect a video output (like Upload Video) to this node.",
-      });
-      return;
+    console.log("Polling status:", statusData);
+
+    if (statusData.status === "COMPLETED") {
+      setIsProcessing(false);
+      setTriggerId(null);
+
+      if (
+        statusData.output &&
+        typeof statusData.output === "object" &&
+        "imageUrl" in statusData.output
+      ) {
+        const resultUrl = (statusData.output as { imageUrl: string }).imageUrl;
+        updateNodeData(id, { imageUrl: resultUrl });
+        toast.success("Frame Extracted Successfully");
+      } else {
+        toast.error("Task completed but no image URL returned");
+      }
+    } else if (
+      statusData.status === "FAILED" ||
+      statusData.status === "CANCELED" ||
+      statusData.status === "TIMED_OUT" ||
+      statusData.status === "CRASHED"
+    ) {
+      setIsProcessing(false);
+      setTriggerId(null);
+      const errorMessage = statusData.error?.message || "Unknown error";
+      toast.error(`Extraction Failed: ${errorMessage}`);
     }
+    // If QUEUED/EXECUTING/WAITING_FOR_DEPLOY, do nothing, just wait for next poll
+  }, [statusData, id, updateNodeData]);
 
-    if (!inputVideo.startsWith("data:video/") && !inputVideo.startsWith("data:application/octet-stream")) {
-       // Note: Some browsers might read video as octet-stream. 
-       // Sticking to strict check if possible, but alerting user.
-       if(!inputVideo.startsWith("data:")){
-            toast.error("Invalid Input Format", {
-                description: "The connected node must provide a Base64 Data URL."
-            });
-            return;
-       }
+  // Handle manual polling errors
+  useEffect(() => {
+    if (statusError) {
+      console.error("Polling error", statusError);
+      // Optional: Retry logic or just log
+    }
+  }, [statusError]);
+
+  const handleExtract = async () => {
+    if (!canExtract) {
+      if (!liveVideoUrl?.includes("cloudinary.com")) {
+        toast.error("Video must be uploaded to Cloudinary first.");
+      }
+      return;
     }
 
     // Timestamp validation
     if (timestamp < 0) {
-        toast.error("Invalid Timestamp", {
-            description: "Timestamp must be a non-negative number."
-        });
-        return;
+      toast.error("Invalid Timestamp. Must be non-negative.");
+      return;
     }
 
     setIsProcessing(true);
-    try {
-      const { extractVideoFrame } = await import("~/app/actions");
+    toast.info("Starting extraction...");
 
-      toast.promise(extractVideoFrame(inputVideo, timestamp), {
-        loading: "Extracting frame...",
-        success: (result) => {
-          // Update local data and global store with result
-          updateNodeData(id, { imageUrl: result.url });
-          return "Frame Extracted Successfully";
+    extractMutation.mutate(
+      { liveVideoUrl, timestamp },
+      {
+        onSuccess: (data) => {
+          console.log("Task initiated, triggerId:", data.triggerId);
+          setTriggerId(data.triggerId);
+          toast.loading("Extracting frame via Trigger.dev...");
         },
-        error: (err) => {
-          console.error("Extraction error", err);
-          return "Extraction Failed";
+        onError: (error) => {
+          console.error("Trigger error:", error);
+          toast.error(`Failed to start extraction: ${error.message}`);
+          setIsProcessing(false);
         },
-      });
-    } catch (error) {
-      console.error("Action import failed", error);
-      toast.error("Failed to start extraction process");
-    } finally {
-      setIsProcessing(false);
-    }
+      },
+    );
   };
 
   return (
@@ -154,7 +201,7 @@ export function ExtractVideoFrameNode({
                 connections.length > 0 ? "!bg-green-500" : "!bg-indigo-500",
               )}
               isValidConnection={validateInput}
-              title="Input Video (Base64)"
+              title="Input Video (Cloudinary URL)"
             />
             <span className="absolute top-1/2 left-4 -translate-y-1/2 text-[10px] whitespace-nowrap text-gray-500">
               Input Video
@@ -177,9 +224,9 @@ export function ExtractVideoFrameNode({
               className="rounded border border-white/10 bg-black/50 px-2 py-1 text-xs text-white outline-none focus:border-[#E0FC00]"
               value={timestamp}
               onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  if(!isNaN(val)) setTimestamp(val);
-                  else setTimestamp(0); // or handle empty string better
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setTimestamp(val);
+                else setTimestamp(0);
               }}
             />
           </div>
@@ -187,16 +234,34 @@ export function ExtractVideoFrameNode({
 
         <button
           onClick={handleExtract}
-          disabled={isProcessing}
+          disabled={!canExtract}
           className={cn(
-            "w-full rounded py-2 text-xs font-bold tracking-wider uppercase transition-colors",
-            isProcessing
+            "flex w-full items-center justify-center gap-2 rounded py-2 text-xs font-bold tracking-wider uppercase transition-colors",
+            !canExtract
               ? "cursor-not-allowed bg-gray-700 text-gray-400"
               : "bg-[#E0FC00] text-black hover:bg-[#cbe600]",
           )}
         >
-          {isProcessing ? "Extracting..." : "Extract Frame"}
+          {isProcessing ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Extracting...
+            </>
+          ) : (
+            "Extract Frame"
+          )}
         </button>
+
+        {!isValidInput && connections.length > 0 && (
+          <p className="text-center text-[10px] text-red-400">
+            Video not loaded or invalid.
+          </p>
+        )}
+        {isValidInput && !liveVideoUrl?.includes("cloudinary.com") && (
+          <p className="text-center text-[10px] text-orange-400">
+            Output must be Cloudinary URL.
+          </p>
+        )}
 
         {/* Result Preview */}
         {data.imageUrl && (
