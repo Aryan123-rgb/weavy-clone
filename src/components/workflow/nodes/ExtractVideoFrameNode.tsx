@@ -12,16 +12,27 @@ import { Smartphone, Loader2 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
-import { api } from "~/trpc/react";
+import { extractVideoFrame } from "~/lib/cloudinary";
+import Image from "next/image";
 
 // Define the data type for our node
 type ExtractVideoFrameNodeData = {
   label?: string;
-  imageUrl?: string; // The output extracted frame (Cloudinary URL)
+  imageUrl?: string; //  The output extracted frame (Cloudinary URL)
 };
 
 type MyNode = Node<ExtractVideoFrameNodeData>;
 
+/**
+ * ExtractVideoFrameNode Component
+ *
+ * This custom React Flow node allows users to extract a single frame from a video
+ * hosted on Cloudinary. It takes a Cloudinary video URL as input (via a connection)
+ * and a user-specified timestamp.
+ *
+ * It interacts with the backend tRPC procedure `workflow.extractFrame` to perform
+ * the extraction using Cloudinary's on-the-fly transformation capabilities. by mutating the cloudinary url
+ */
 export function ExtractVideoFrameNode({
   data,
   selected,
@@ -30,20 +41,27 @@ export function ExtractVideoFrameNode({
   const { updateNodeData, nodeData } = useFlowStore();
   const { getEdges, getNodes } = useReactFlow();
 
-  // Timestamp input (seconds)
+  // State to hold the timestamp input by the user (in seconds)
   const [timestamp, setTimestamp] = useState<number>(0);
-  const [isProcessing, setIsProcessing] = useState(false);
+
+  // State to track if the extraction request is in progress
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+
+  // Local state to display the result immediately after extraction
   const [extractedImageUrl, setExtractedImageUrl] = useState<string | null>(
     null,
   );
 
-  // TRPC Mutations
-  const extractMutation = api.workflow.extractFrame.useMutation();
+  // tRPC Mutation removed in favor of client-side utility
+  // const extractMutation = api.workflow.extractFrame.useMutation();
 
-  // Input connection tracking
+  // Track connections to the 'video' input handle to show status indicators
   const connections = useHandleConnections({ type: "target", id: "video" });
 
-  // Helper to get input video URL from connection
+  /**
+   * Helper function to retrieve the input video URL from the connected source node.
+   * It checks the global store for live data first, then falls back to the node's initial data.
+   */
   const getInputVideo = () => {
     const edges = getEdges();
     const nodes = getNodes();
@@ -54,13 +72,13 @@ export function ExtractVideoFrameNode({
     );
     if (!edge) return null;
 
-    // Try store first (live data)
+    // Try store first (live data passed between nodes)
     if (nodeData[edge.source]) {
       const sourceData = nodeData[edge.source] as Record<string, unknown>;
       return (sourceData.mediaUrl ?? sourceData.video) as string | undefined;
     }
 
-    // Fallback to node data
+    // Fallback to static node data if live data isn't available
     const sourceNode = nodes.find((n) => n.id === edge.source);
     const sData = sourceNode?.data;
     return (sData?.mediaUrl ?? sData?.video) as string | undefined;
@@ -71,15 +89,22 @@ export function ExtractVideoFrameNode({
     !!liveVideoUrl &&
     (liveVideoUrl.startsWith("http") || liveVideoUrl.startsWith("blob:"));
 
-  // Requirement: Enable button only when URL is provided.
+  // Requirement: Enable button only when a valid Cloudinary URL is provided and not currently processing.
   const canExtract =
     isValidInput && liveVideoUrl.includes("cloudinary.com") && !isProcessing;
 
+  /**
+   * Validates if a connection can be made to the video handle.
+   */
   const validateInput = (connection: Connection | Edge) => {
     return connection.sourceHandle === "video";
   };
 
-  const handleExtract = () => {
+  /**
+   * Handles the click event for the "Extract Frame" button.
+   * It performs validation and then calls the `extractVideoFrame` utility.
+   */
+  const handleExtract = async () => {
     if (!canExtract) {
       if (!liveVideoUrl?.includes("cloudinary.com")) {
         toast.error("Video must be uploaded to Cloudinary first.");
@@ -87,7 +112,7 @@ export function ExtractVideoFrameNode({
       return;
     }
 
-    // Timestamp validation
+    // Timestamp validation to ensure positive value
     if (timestamp < 0) {
       toast.error("Invalid Timestamp. Must be non-negative.");
       return;
@@ -96,27 +121,25 @@ export function ExtractVideoFrameNode({
     setIsProcessing(true);
     toast.info("Extracting frame...");
 
-    extractMutation.mutate(
-      { liveVideoUrl, timestamp },
-      {
-        onSuccess: (data) => {
-          setIsProcessing(false);
-          if (data.imageUrl) {
-            // Update local state for immediate feedback
-            setExtractedImageUrl(data.imageUrl);
-            // Update global flow state
-            updateNodeData(id, { imageUrl: data.imageUrl });
+    try {
+      // Client-side extraction (URL manipulation)
+      // We wrap in a small timeout if we want to simulate async or just run it.
+      // Since it's synchronous string manip, it's instant.
+      const newUrl = extractVideoFrame(liveVideoUrl, timestamp);
 
-            toast.success("Frame Extracted Successfully");
-          }
-        },
-        onError: (error) => {
-          console.error("Extraction error:", error);
-          toast.error(`Failed to extract frame: ${error.message}`);
-          setIsProcessing(false);
-        },
-      },
-    );
+      // Simulating a brief delay for UX (optional, but requested in behavior)
+      // or just proceed directly.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      setExtractedImageUrl(newUrl);
+      updateNodeData(id, { imageUrl: newUrl });
+      toast.success("Frame Extracted Successfully");
+    } catch (error) {
+      console.error("Extraction error:", error);
+      toast.error(`Failed to extract frame: ${(error as Error).message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -215,11 +238,12 @@ export function ExtractVideoFrameNode({
               Result
             </span>
             <div className="relative aspect-video w-full overflow-hidden rounded border border-white/10 bg-black/50">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={extractedImageUrl}
                 alt="Extracted"
-                className="h-full w-full object-contain"
+                fill
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               />
             </div>
           </div>

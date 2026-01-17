@@ -13,12 +13,16 @@ import {
   Video,
   Smartphone,
   Bot,
+  Save,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 
 import { DraggableSidebarItem } from "./DraggableSidebarItem";
+import { useFlowStore } from "~/store/flowStore";
+import { api } from "~/trpc/react";
+import { toast } from "sonner";
 
 /**
  * Configuration for available tool items in the sidebar.
@@ -74,6 +78,10 @@ export function LeftSidebar() {
     "search" | "quick-access" | null
   >(null);
 
+  const { nodes, edges } = useFlowStore();
+  const saveMutation = api.workflow.save.useMutation();
+  const utils = api.useUtils();
+
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
     if (!isCollapsed) {
@@ -91,6 +99,44 @@ export function LeftSidebar() {
     } else {
       setActivePanel(panel);
     }
+  };
+
+  const handleSave = () => {
+    // Attempt to parse workflow ID from URL
+    const pathSegments = window.location.pathname.split("/");
+    const workflowId = pathSegments[pathSegments.length - 1]; // /workflow/[id]
+
+    if (!workflowId || workflowId === "workflow") {
+      toast.error("Could not determine Workflow ID to save to.");
+      return;
+    }
+
+    // Prepare definition payload
+    const definition = {
+      nodes,
+      edges,
+    };
+
+    toast.loading("Saving workflow...");
+
+    saveMutation.mutate(
+      {
+        id: workflowId,
+        definition: definition,
+      },
+      {
+        onSuccess: () => {
+          toast.dismiss();
+          toast.success("Workflow saved successfully!");
+          utils.workflow.getById.invalidate({ id: workflowId });
+        },
+        onError: (err) => {
+          toast.dismiss();
+          console.error(err);
+          toast.error("Failed to save workflow.");
+        },
+      },
+    );
   };
 
   return (
@@ -147,6 +193,21 @@ export function LeftSidebar() {
         >
           <Clock className="h-5 w-5" />
           {!isCollapsed && <span className="ml-3">Quick Access</span>}
+        </Button>
+
+        {/* Save Button */}
+        <Button
+          variant="ghost"
+          size={isCollapsed ? "icon" : "default"}
+          className={cn(
+            "mt-auto text-gray-400 hover:bg-white/5 hover:text-white",
+            !isCollapsed && "w-full justify-start px-3",
+          )}
+          onClick={handleSave}
+          disabled={saveMutation.isPending}
+        >
+          <Save className="h-5 w-5" />
+          {!isCollapsed && <span className="ml-3">Save</span>}
         </Button>
       </div>
 

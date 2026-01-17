@@ -6,16 +6,15 @@ export const runLLMTask = task({
   retry: {
     maxAttempts: 1, // Disable retries as requested
   },
-  run: async (payload: { prompt: string; system?: string; image?: string }) => {
+  run: async (payload: { prompt: string; system?: string; imageURL?: string }) => {
     
     // Validation for image URL
-    if (payload.image) {
-      const validExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
-      const lowerUrl = payload.image.toLowerCase();
-      const isDataUrl = lowerUrl.startsWith("data:image/");
+    if (payload.imageURL) {
+      const lowerUrl = payload.imageURL.toLowerCase();
+      const isDataUrl = lowerUrl.startsWith("https://res.cloudinary.com/");
 
       if (!isDataUrl) {
-         throw new Error("Invalid image URL: Must be a Base64 Data URL starting with 'data:image/'. HTTP URLs are not supported.");
+         throw new Error("Invalid image URL: Must be a Base64 Data URL starting with 'https://res.cloudinary.com/'. HTTP URLs are not supported.");
       }
     }
 
@@ -44,7 +43,7 @@ export const runLLMTask = task({
       userContent.push({
         type: "image_url",
         image_url: {
-          url: payload.image || "",
+          url: payload.imageURL || "",
         }
       });
 

@@ -3,12 +3,12 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import React, { useState, useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import axios from "axios";
 import { X, Upload, CloudUpload } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
-import { env } from "~/env";
+import { uploadToCloudinary } from "~/lib/cloudinary";
+import Image from "next/image";
 
 // Define the data type for our node
 type UploadImageNodeData = {
@@ -18,14 +18,25 @@ type UploadImageNodeData = {
 
 type MyNode = Node<UploadImageNodeData>;
 
+/**
+ * UploadImageNode Component
+ * 
+ * A React Flow node that allows users to upload an image file.
+ * It provides drag-and-drop functionality using `react-dropzone` and 
+ * uploads the selected file to Cloudinary using the `uploadToCloudinary` utility.
+ * The node updates its data with the resulting Cloudinary URL.
+ */
 export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
   const { updateNodeData } = useFlowStore();
   
   // State
   const [file, setFile] = useState<File | null>(null);
+  
+  // Local state for preview URL (can be object URL or Cloudinary URL)
   const [previewUrl, setPreviewUrl] = useState<string | null>(
-    data?.imageUrl || null,
+    data?.imageUrl ?? null,
   );
+  
   const [isUploading, setIsUploading] = useState(false);
 
   // Dropzone callback
@@ -76,6 +87,11 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
     multiple: false,
   });
 
+  /**
+   * Handles the upload of the selected file to Cloudinary.
+   * Uses the `uploadToCloudinary` utility function.
+   * Updates global node data and local state upon success.
+   */
   const handleCloudUpload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!file) return;
@@ -83,21 +99,8 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
     setIsUploading(true);
     toast.info("Uploading to cloud...");
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append(
-      "upload_preset",
-      env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
-    );
-
     try {
-      const cloudName = env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-      const response = await axios.post(
-        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-        formData,
-      );
-
-      const resultUrl = response.data.secure_url;
+      const resultUrl = await uploadToCloudinary(file, "image");
       
       updateNodeData(id, {
         imageUrl: resultUrl,
@@ -109,11 +112,7 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
       toast.success("Upload Successful");
     } catch (error) {
       console.error("Upload error:", error);
-      if (axios.isAxiosError(error)) {
-        toast.error(`Upload Failed: ${error.response?.data?.error?.message || error.message}`);
-      } else {
-        toast.error("Upload Failed: Unknown error");
-      }
+      toast.error(`Upload Failed: ${(error as Error).message}`);
     } finally {
       setIsUploading(false);
     }
@@ -146,11 +145,12 @@ export function UploadImageNode({ data, selected, id }: NodeProps<MyNode>) {
       <div className="flex min-h-[150px] flex-col items-center justify-center p-4">
         {previewUrl ? (
           <div className="group/image relative aspect-video w-full overflow-hidden rounded-lg border border-white/10">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={previewUrl}
               alt="Uploaded"
-              className="h-full w-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             />
             <button
               onClick={clearImage}

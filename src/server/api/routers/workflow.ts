@@ -2,6 +2,8 @@ import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
+import { tasks, runs } from "@trigger.dev/sdk/v3";
+import type { runLLMTask } from "~/trigger/task";
 
 export const workflowRouter = createTRPCRouter({
   create: publicProcedure
@@ -34,56 +36,93 @@ export const workflowRouter = createTRPCRouter({
         },
       });
     }),
-
-  extractFrame: publicProcedure
+  runLLM: publicProcedure
     .input(
       z.object({
-        liveVideoUrl: z.string().url(),
-        timestamp: z.number().min(0),
+        prompt: z.string(),
+        system: z.string().optional(),
+        imageURL: z.string().optional(),
       }),
     )
     .mutation(async ({ input }) => {
       const { userId } = await auth();
       if (!userId) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      // Logic for Cloudinary URL transformation
-      // We assume input.liveVideoUrl is a Cloudinary video URL.
-      // E.g., https://res.cloudinary.com/<cloud_name>/video/upload/v<version>/<public_id>.<ext>
-      
-      const url = input.liveVideoUrl;
-      
-      if (!url.includes("/upload/")) {
-         throw new TRPCError({
-             code: "BAD_REQUEST",
-             message: "Invalid Cloudinary Video URL",
-         });
-      }
+      try {
+        // 1. Trigger the task
+        const handle = await tasks.trigger<typeof runLLMTask>(
+          "run-llm-task",
+          input,
+        );
 
-      const timestamp = input.timestamp;
-      
-      // Inject `so_<timestamp>` (start offset) after `/upload/`
-      // Change extension to .jpg (forcing image format)
-      
-      const parts = url.split("/upload/");
-      const baseUrl = parts[0] + "/upload/";
-      // rest contains potential version, path, and extension
-      const rest = parts[1];
-      
-      if (!rest) {
+        // 2. Poll for completion
+        let attempts = 0;
+        const maxAttempts = 60; // 60 seconds max wait
+
+        while (attempts < maxAttempts) {
+          const task = await runs.retrieve(handle.id);
+
+          if (task.status === "COMPLETED") {
+            return {
+              output: task.output,
+              status: task.status,
+              id: task.id,
+            };
+          }
+
+          if (
+            task.status === "FAILED" ||
+            task.status === "CANCELED" ||
+            task.status === "CRASHED"
+          ) {
+            return {
+              error: { message: "AI Task failed or was canceled." },
+              status: task.status,
+              id: task.id,
+            };
+          }
+
+          // Wait 1s before checking again
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          attempts++;
+        }
+
         throw new TRPCError({
-             code: "BAD_REQUEST",
-             message: "Invalid Cloudinary Video URL Format",
-         });
+          code: "TIMEOUT",
+          message: "Task timed out polling for result",
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        
+        console.error("RunLLM Error:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Unknown Error",
+        });
       }
+    }),
+    save: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        definition: z.custom<any>((val) => {
+          // Rudimentary validation: check if it's an object (JSON)
+          return typeof val === "object" && val !== null;
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = await auth();
+      if (!userId) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      const transformation = `so_${timestamp},f_jpg,fl_attachment:false`; 
-      
-      // Remove extension from valid URL:
-      const lastDotIndex = rest.lastIndexOf(".");
-      const restNoExt = lastDotIndex !== -1 ? rest.substring(0, lastDotIndex) : rest;
-      
-      const finalUrl = `${baseUrl}${transformation}/${restNoExt}.jpg`;
-
-      return { imageUrl: finalUrl };
+      return ctx.db.workflow.update({
+        where: {
+          id: input.id,
+          // Ensure user owns the workflow if necessary, though typical for MVP valid check is fine
+        },
+        data: {
+          definition: input.definition,
+        },
+      });
     }),
 });

@@ -11,6 +11,77 @@
  * - Keep this component thin. It should strictly handle Context Providers.
  * - Logic for DnD and Nodes should be in `WorkflowEditorContent`.
  *
+ * =================================================================================================
+ * REACT FLOW DOCUMENTATION: NODES, HANDLES, AND DATA FLOW
+ * =================================================================================================
+ *
+ * This section serves as the SINGLE SOURCE OF TRUTH for how data flows between nodes in this editor.
+ *
+ * CORE CONCEPTS:
+ * - **Output (Source)**: Where data leaves a node. Visually on the RIGHT.
+ *   - The node connecting 'from' this handle passes its data to the next node.
+ * - **Input (Target)**: Where data enters a node. Visually on the LEFT.
+ *   - The node connecting 'to' this handle receives data from the previous node.
+ *
+ * DATA FLOW GRAPH:
+ *
+ * [UploadImageNode] --(image)--> [CropImageNode] --(image)--> [RunLLMNode]
+ * [UploadVideoNode] --(video)--> [ExtractVideoFrameNode] --(image)--> [RunLLMNode]
+ * [TextNode] ----------------------------------------------------(text)--> [RunLLMNode]
+ *
+ * NODE REFERENCE:
+ *
+ * 1. **TextNode** (`text`)
+ *    - **Description**: Simple text input area.
+ *    - **Inputs**: None.
+ *    - **Outputs**:
+ *      - Handle ID: `text` (Right)
+ *      - Data: `{ text: string }`
+ *
+ * 2. **UploadImageNode** (`upload-image`)
+ *    - **Description**: Uploads an image to Cloudinary.
+ *    - **Inputs**: None.
+ *    - **Outputs**:
+ *      - Handle ID: `image` (Right)
+ *      - Data: `{ imageUrl: string }` (Cloudinary URL)
+ *
+ * 3. **CropImageNode** (`crop-image`)
+ *    - **Description**: Crops a Cloudinary image using URL transformations.
+ *    - **Inputs**:
+ *      - Handle ID: `image` (Left)
+ *      - Expects: Cloudinary Image URL (string)
+ *    - **Outputs**:
+ *      - Handle ID: `image` (Right)
+ *      - Data: `{ imageUrl: string }` (Cropped Cloudinary URL)
+ *
+ * 4. **UploadVideoNode** (`upload-video`)
+ *    - **Description**: Uploads a video to Cloudinary.
+ *    - **Inputs**: None.
+ *    - **Outputs**:
+ *      - Handle ID: `video` (Right)
+ *      - Data: `{ mediaUrl: string, mediaType: string }`
+ *
+ * 5. **ExtractVideoFrameNode** (`extract-frame`)
+ *    - **Description**: Extracts a still frame from a Cloudinary video.
+ *    - **Inputs**:
+ *      - Handle ID: `video` (Left)
+ *      - Expects: Cloudinary Video URL (string)
+ *    - **Outputs**:
+ *      - Handle ID: `image` (Right)
+ *      - Data: `{ imageUrl: string }` (Extracted Frame URL)
+ *
+ * 6. **RunLLMNode** (`run-llm`)
+ *    - **Description**: Runs an LLM (using Groq) with optional inputs.
+ *    - **Inputs**:
+ *      - Handle ID: `prompt` (Left) -> User Prompt text.
+ *      - Handle ID: `system` (Left) -> System Prompt text.
+ *      - Handle ID: `image1` (Left) -> Image URL (Base64 or Cloudinary).
+ *    - **Outputs**:
+ *      - Handle ID: `result` (Right)
+ *      - Data: `{ result: string }` (LLM Response)
+ *
+ * =================================================================================================
+ *
  * @property {string} workflowName - Name to display in the editor.
  */
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
@@ -64,9 +135,42 @@ function DroppableCanvasArea({ children }: { children: React.ReactNode }) {
  *
  * @property {string} workflowName - The name of the current workflow.
  */
-function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
+// ... imports
+import { useEffect } from "react";
+import { useFlowStore } from "~/store/flowStore";
+
+// ... (keep nodeTypes)
+
+// ... (keep DroppableCanvasArea)
+
+/**
+ * Main content of the workflow editor.
+ * ...
+ */
+function WorkflowEditorContent({
+  workflowName,
+  initialData,
+}: {
+  workflowName: string;
+  initialData?: any;
+}) {
   const { screenToFlowPosition, addNodes } = useReactFlow();
   const [activeDragItem, setActiveDragItem] = useState<any>(null);
+  const { setNodes, setEdges } = useFlowStore();
+
+  // Initialize Store with DB Data
+  useEffect(() => {
+    if (initialData) {
+      // Assuming initialData matches { nodes: [], edges: [] } structure
+      // we saved in LeftSidebar
+      if (initialData.nodes) {
+        setNodes(initialData.nodes);
+      }
+      if (initialData.edges) {
+        setEdges(initialData.edges);
+      }
+    }
+  }, [initialData, setNodes, setEdges]);
 
   const handleDragStart = (event: any) => {
     setActiveDragItem(event.active.data.current);
@@ -138,11 +242,21 @@ function WorkflowEditorContent({ workflowName }: { workflowName: string }) {
  * Provides the ReactFlow context.
  *
  * @property {string} workflowName - Name to display in the editor.
+ * @property {any} initialData - The persisted workflow definition (nodes, edges).
  */
-export function WorkflowWrapper({ workflowName }: { workflowName: string }) {
+export function WorkflowWrapper({
+  workflowName,
+  initialData,
+}: {
+  workflowName: string;
+  initialData?: any;
+}) {
   return (
     <ReactFlowProvider>
-      <WorkflowEditorContent workflowName={workflowName} />
+      <WorkflowEditorContent
+        workflowName={workflowName}
+        initialData={initialData}
+      />
     </ReactFlowProvider>
   );
 }

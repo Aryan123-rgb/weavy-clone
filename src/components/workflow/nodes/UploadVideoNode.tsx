@@ -3,12 +3,11 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import React, { useState, useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import axios from "axios";
 import { X, FileVideo, CloudUpload } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
-import { env } from "~/env";
+import { uploadToCloudinary } from "~/lib/cloudinary";
 
 // Define the data type for our node
 type UploadVideoNodeData = {
@@ -19,6 +18,14 @@ type UploadVideoNodeData = {
 
 type MyNode = Node<UploadVideoNodeData>;
 
+/**
+ * UploadVideoNode Component
+ *
+ * A React Flow node that allows users to upload a video file.
+ * It provides drag-and-drop functionality using `react-dropzone` and
+ * uploads the selected file to Cloudinary using the `uploadToCloudinary` utility.
+ * The node updates its data with the resulting Cloudinary URL.
+ */
 export function UploadVideoNode({
   data = {},
   selected,
@@ -29,7 +36,7 @@ export function UploadVideoNode({
   // State
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
-    data?.mediaUrl || null,
+    data?.mediaUrl ?? null,
   );
   const [isUploading, setIsUploading] = useState(false);
 
@@ -79,6 +86,11 @@ export function UploadVideoNode({
     multiple: false,
   });
 
+  /**
+   * Handles the upload of the selected file to Cloudinary as a video resource.
+   * Uses the `uploadToCloudinary` utility function.
+   * Updates global node data and local state upon success.
+   */
   const handleCloudUpload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!file) return;
@@ -86,38 +98,21 @@ export function UploadVideoNode({
     setIsUploading(true);
     toast.info("Uploading to cloud...");
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append(
-      "upload_preset",
-      env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
-    );
-
     try {
-      const cloudName = env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-      const response = await axios.post(
-        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
-        formData,
-      );
+      const resultUrl = await uploadToCloudinary(file, "video");
 
-      const resultUrl = response.data.secure_url;
-      
       updateNodeData(id, {
         mediaUrl: resultUrl,
         mediaType: "video/mp4", // Or detect from file.type
       });
-      
+
       // Update preview to the cloud URL
       setPreviewUrl(resultUrl);
       setFile(null); // Clear local file after successful upload
       toast.success("Upload Successful");
     } catch (error) {
       console.error("Upload error:", error);
-      if (axios.isAxiosError(error)) {
-        toast.error(`Upload Failed: ${error.response?.data?.error?.message || error.message}`);
-      } else {
-        toast.error("Upload Failed: Unknown error");
-      }
+      toast.error(`Upload Failed: ${(error as Error).message}`);
     } finally {
       setIsUploading(false);
     }
@@ -174,11 +169,16 @@ export function UploadVideoNode({
           >
             <input {...getInputProps()} />
             <div className="mb-2 flex gap-2">
-              <FileVideo className={cn("h-6 w-6 text-gray-400", isDragActive && "text-[#E0FC00]")} />
+              <FileVideo
+                className={cn(
+                  "h-6 w-6 text-gray-400",
+                  isDragActive && "text-[#E0FC00]",
+                )}
+              />
             </div>
 
             <p className="px-4 text-center text-xs text-gray-400">
-               {isDragActive
+              {isDragActive
                 ? "Drop video here..."
                 : "Drag & drop or click to upload"}
             </p>

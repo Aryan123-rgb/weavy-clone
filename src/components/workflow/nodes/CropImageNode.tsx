@@ -6,12 +6,14 @@ import {
   useReactFlow,
   useHandleConnections,
 } from "@xyflow/react";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import type { Node, NodeProps, Connection, Edge } from "@xyflow/react";
 import { Crop as CropIcon } from "lucide-react";
+import { cropCloudinaryImage } from "~/lib/cloudinary";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
+import Image from "next/image";
 
 // Define the data type for our node
 type CropImageNodeData = {
@@ -21,73 +23,22 @@ type CropImageNodeData = {
 
 type MyNode = Node<CropImageNodeData>;
 
-// Utility function to crop Cloudinary Image
-async function getImageDimensions(
-  url: string,
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-
-    img.onload = () => {
-      resolve({
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      });
-    };
-
-    img.onerror = () => {
-      reject(new Error("Failed to load image"));
-    };
-
-    // Set crossOrigin if needed for CORS
-    img.crossOrigin = "anonymous";
-    img.src = url;
-  });
-}
-
-async function cropCloudinaryImage(
-  imageUrl: string,
-  xPercent: number,
-  yPercent: number,
-  widthPercent: number,
-  heightPercent: number,
-): Promise<string> {
-  // Check if it's a valid Cloudinary URL
-  if (!imageUrl.includes("cloudinary.com")) {
-    throw new Error("Invalid Cloudinary URL");
-  }
-
-  // Get image dimensions
-  const { width: imgWidth, height: imgHeight } =
-    await getImageDimensions(imageUrl);
-
-  // Calculate actual pixel values from percentages
-  const x = Math.round((xPercent / 100) * imgWidth);
-  const y = Math.round((yPercent / 100) * imgHeight);
-  const width = Math.round((widthPercent / 100) * imgWidth);
-  const height = Math.round((heightPercent / 100) * imgHeight);
-
-  // Build the crop transformation string
-  const cropTransform = `c_crop,x_${x},y_${y},w_${width},h_${height}`;
-
-  // Split at /upload/
-  const parts = imageUrl.split("/upload/");
-
-  if (parts.length !== 2) {
-    throw new Error("Invalid Cloudinary URL format");
-  }
-
-  // Remove any existing transformations from the second part
-  const afterUpload = parts[1]?.replace(/^[^/]+\//, "");
-
-  // Reconstruct URL with new transformation
-  return `${parts[0]}/upload/${cropTransform}/${afterUpload}`;
-}
+/**
+ * CropImageNode Component
+ * 
+ * This custom React Flow node provides an interface for cropping images hosted on Cloudinary.
+ * It accepts a Cloudinary image URL as input and allows the user to specify crop parameters
+ * (x, y, width, height in percentages). The cropping is performed by generating a new 
+ * Cloudinary transformation URL using the `cropCloudinaryImage` utility.
+ * 
+ * The node outputs the URL of the cropped image.
+ */
 export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
   const { updateNodeData, nodeData } = useFlowStore();
   const { getEdges, getNodes } = useReactFlow();
 
   // Inputs for crop percentages
+  // These determine the region of the image to crop.
   const [cropParams, setCropParams] = useState({
     x: 0,
     y: 0,
@@ -96,14 +47,20 @@ export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
   });
 
   // Local state to store the processed Image URL for display/output
+  // Initialized with data.imageUrl if available.
   const [processedImageUrl, setProcessedImageUrl] = useState<
-    string | undefined
-  >(data.imageUrl);
+    string | null
+  >(data.imageUrl ?? null);
 
   // Input connection tracking
   const connections = useHandleConnections({ type: "target", id: "image" });
 
-  // Get live input from the connected node
+  /**
+   * Helper function to retrieve the input image URL from the connected source node.
+   * Checks the global flow store for live data passed from the upstream node.
+   * 
+   * @returns {string | undefined} The URL of the input image, or undefined if not found.
+   */
   const getInputImage = (): string | undefined => {
     const edges = getEdges();
     // Find edge connected to our 'image' handle
@@ -115,10 +72,8 @@ export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
     // Try store first (live data)
     if (nodeData[edge.source]) {
       const sourceData = nodeData[edge.source] as Record<string, unknown>;
-      // Support imageUrl (standard) or image (legacy)
-      const img = (sourceData.imageUrl ?? sourceData.image) as
-        | string
-        | undefined;
+      // Support imageUrl (standard)
+      const img = (sourceData.imageUrl) as string | undefined;
       return img;
     }
 
@@ -128,15 +83,13 @@ export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
 
   const inputUrl = getInputImage();
   const hasValidInput =
-    !!inputUrl && inputUrl.includes("cloudinary.com") && inputUrl.length > 0;
+    inputUrl?.includes("cloudinary.com") && inputUrl.length > 0;
 
-  // Auto-update preview if input changes (optional, but good UX if we want to show the source image before cropping?)
-  // The user requirement said: "as soon as the image gets uploaded it will flow the live cloudinary url to cropimagenode and use that url to show the preview of the image"
-  // So we should show the *Input* image if we haven't cropped yet? Or show the *Cropped* image?
-  // "when the input parameters are provided run them through the crop function and display the new cropped image"
-  // Let's show inputUrl if processedImageUrl is empty, or just rely on manual crop.
-  // Actually, let's keep it simple: We have a "Crop" button.
-
+  /**
+   * Handles the image cropping logic.
+   * Validates the input URL and crop parameters, then calls `cropCloudinaryImage` 
+   * to generate the new URL. Updates local state and global node data upon success.
+   */
   const handleCrop = async () => {
     if (!hasValidInput || !inputUrl) {
       toast.error("Invalid Input", {
@@ -155,7 +108,6 @@ export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
       );
 
       setProcessedImageUrl(newUrl);
-      console.log("processedImageUrl", processedImageUrl);
       updateNodeData(id, { imageUrl: newUrl });
       toast.success("Image Cropped successfully");
     } catch (error) {
@@ -292,11 +244,12 @@ export function CropImageNode({ data, selected, id }: NodeProps<MyNode>) {
               {processedImageUrl ? "Cropped Result" : "Input Preview"}
             </span>
             <div className="relative aspect-video w-full overflow-hidden rounded border border-white/10 bg-black/50">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={processedImageUrl || inputUrl} // Show result if available, else show input
+              <Image
+                src={processedImageUrl ?? inputUrl ?? ""} // Show result if available, else show input
                 alt="Preview"
-                className="h-full w-full object-contain"
+                fill
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               />
             </div>
           </div>

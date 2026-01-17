@@ -4,13 +4,14 @@ import {
   Handle,
   Position,
   useReactFlow,
-  useHandleConnections,
+  useNodeConnections,
 } from "@xyflow/react";
 import type { Node, NodeProps, Connection, Edge } from "@xyflow/react";
 import { Bot, Image as ImageIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFlowStore } from "~/store/flowStore";
 import { toast } from "sonner";
+import { api } from "~/trpc/react";
 
 type RunLLMNodeData = {
   label?: string;
@@ -26,17 +27,17 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
   const { getEdges, getNodes } = useReactFlow();
 
   // Track connections to enable/disable handles or show status
-  const systemConnections = useHandleConnections({
-    type: "target",
-    id: "system",
+  const systemConnections = useNodeConnections({
+    handleType: "target",
+    handleId: "system",
   });
-  const promptConnections = useHandleConnections({
-    type: "target",
-    id: "prompt",
+  const promptConnections = useNodeConnections({
+    handleType: "target",
+    handleId: "prompt",
   });
-  const imageConnections = useHandleConnections({
-    type: "target",
-    id: "image1",
+  const imageConnections = useNodeConnections({
+    handleType: "target",
+    handleId: "image1",
   });
 
   const { setExecutionState, executionState, updateNodeData, nodeData } =
@@ -48,9 +49,49 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
   const currentData = { ...data, ...currentStoreData };
   const { result, systemUsed, promptUsed, imageUsed } = currentData;
 
+  const runLLMMutation = api.workflow.runLLM.useMutation();
+
+  // Helper safely extract text string
+  const safeGetText = (obj: unknown): string => {
+    if (typeof obj === "object" && obj !== null) {
+      const data = obj as Record<string, unknown>;
+      // Check for 'text' (TextNode)
+      if ("text" in data && typeof data.text === "string") {
+        return data.text;
+      }
+      // Check for 'result' (RunLLMNode)
+      if ("result" in data && typeof data.result === "string") {
+        return data.result;
+      }
+    }
+    return "";
+  };
+
+  // derived state for checks
+  const promptConnection = promptConnections?.[0];
+  const promptSourceId = promptConnection?.source;
+
+  let promptText = "";
+  if (promptSourceId) {
+    // 1. Live Data
+    const liveData = nodeData[promptSourceId];
+    if (liveData) {
+      promptText = safeGetText(liveData);
+    }
+    // 2. Static Data (fallback if live data is empty/missing, though live data usually supercedes)
+    if (!promptText) {
+      const sourceNode = getNodes().find((n) => n.id === promptSourceId);
+      if (sourceNode?.data) {
+        promptText = safeGetText(sourceNode.data);
+      }
+    }
+  }
+
+  const isPromptValid = promptText && promptText.trim().length > 0;
+
   const validateInput = (
     connection: Connection | Edge,
-    expectedSourceType: "text" | "image",
+    expectedSourceType: "text" | "image" | "result",
   ) => {
     // connection.sourceHandle is the ID of the handle on the source node
     const sourceHandleId = connection.sourceHandle;
@@ -68,6 +109,13 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       // Explicitly ban "image" handle
       if (sourceHandleId === "image") return false;
       return true;
+    }
+
+    if (expectedSourceType === "result") {
+      // Allow result inputs from result-like handles
+      // We assume nodes outputting results use id="result"
+      if (sourceHandleId === "result") return true;
+      return false;
     }
 
     return true;
@@ -98,15 +146,6 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     const promptData = getSourceData("prompt");
     const imageData = getSourceData("image1");
 
-    // Helper safely extract text string
-    const safeGetText = (obj: unknown): string => {
-      if (typeof obj === "object" && obj !== null && "text" in obj) {
-        const val = (obj as Record<string, unknown>).text;
-        return typeof val === "string" ? val : "";
-      }
-      return "";
-    };
-
     const safeGetImage = (obj: unknown): string | undefined => {
       if (typeof obj === "object" && obj !== null) {
         // Check for imageUrl (new convention) or image (legacy)
@@ -122,8 +161,10 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       return undefined;
     };
 
-    const systemText = safeGetText(systemData);
-    const promptText = safeGetText(promptData);
+    const systemText = safeGetText(systemData); // reuse hoisted helper if preferred, or keep logic. 
+    // Actually simpler to just use local variables or reuse the hoisted one.
+    // promptData might be slightly different object reference but logic is same.
+    const promptTextVal = safeGetText(promptData);
     const imageUrl = safeGetImage(imageData);
 
     setExecutionState(id, "running");
@@ -131,7 +172,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     // Update the node data with what we are about to allow user inspection
     updateNodeData(id, {
       systemUsed: systemText,
-      promptUsed: promptText,
+      promptUsed: promptTextVal,
       imageUsed: imageUrl,
       result: undefined, // clear previous result
     });
@@ -143,9 +184,12 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
       const lowerUrl = imageUrl.toLowerCase();
       const isDataUrl = lowerUrl.startsWith("data:image/");
 
-      if (!isDataUrl) {
+      // It might be a cloudinary url too now, so let's allow http(s)
+      const isHttp = lowerUrl.startsWith("http");
+
+      if (!isDataUrl && !isHttp) {
         toast.error("Invalid Image Input", {
-          description: "Input must be a Base64 Data URL (data:image/...).",
+          description: "Input must be a Base64 Data URL or a valid Image URL.",
         });
         setExecutionState(id, "failed");
         return;
@@ -153,23 +197,27 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
     }
 
     try {
-      const { triggerLLMRun } = await import("~/app/actions");
-
-      // Trigger and Poll for result
-      const runResult = await triggerLLMRun({
+      // Trigger and Poll for result via tRPC
+      const runResult = await runLLMMutation.mutateAsync({
         system: systemText,
-        prompt: promptText,
-        image: imageUrl,
+        prompt: promptTextVal,
+        imageURL: imageUrl,
       });
 
-      // Check if task failed or has error
-      if (runResult.error) {
-        const err = runResult.error as { message?: string };
+      // Check if task failed or has error (from our manual error object in tRPC)
+      // The tRPC mutation returns { error?: ... } if it failed gracefully inside the loop
+      // or throws if it crashed/timed out.
+      // We need to allow for the return type which might contain error property.
+
+      const resultData = runResult as any; // Type inference helper
+
+      if (resultData.error) {
+        const err = resultData.error as { message?: string };
         const errorMessage = err.message ?? "Task failed";
         throw new Error(errorMessage);
       }
 
-      const output = runResult.output as { result?: string } | undefined;
+      const output = resultData.output as { result?: string } | undefined;
 
       // Check for valid output
       if (!output?.result) {
@@ -187,7 +235,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
         result: aiText,
         // Keeping inputs in data so they persist in UI
         systemUsed: systemText,
-        promptUsed: promptText,
+        promptUsed: promptTextVal,
         imageUsed: imageUrl,
       });
       setExecutionState(id, "completed");
@@ -223,13 +271,14 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
         </div>
         <button
           onClick={handleRun}
-          disabled={isRunning}
+          disabled={isRunning || !isPromptValid}
           className={cn(
             "rounded px-2 py-1 text-[10px] font-bold uppercase transition-colors",
-            isRunning
+            isRunning || !isPromptValid
               ? "cursor-not-allowed bg-gray-700 text-gray-400"
               : "bg-[#E0FC00] text-black hover:bg-[#cbe600]",
           )}
+          title={!isPromptValid ? "Please connect a valid text prompt" : "Run AI"}
         >
           {isRunning ? "Running..." : "Run"}
         </button>
@@ -330,7 +379,7 @@ export function RunLLMNode({ data, selected, id }: NodeProps<MyNode>) {
         <Handle
           type="source"
           position={Position.Right}
-          id="result"
+          id="text"
           className="!h-3 !w-3 !border-2 !border-[#1A1A1A] !bg-[#E0FC00]"
         />
       </div>

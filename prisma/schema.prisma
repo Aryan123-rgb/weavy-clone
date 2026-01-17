@@ -25,7 +25,8 @@ model Workflow {
     userId    String
     name      String
     createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    updatedAt  DateTime @updatedAt
+    definition Json?
 
     @@index([userId])
 }
