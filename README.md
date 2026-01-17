@@ -1,29 +1,76 @@
-# Create T3 App
+# Weavy Clone
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+A powerful visual workflow builder for AI and media processing tasks.
 
-## What's next? How do I make an app with this?
+**Live Demo:** [https://weavy-clone-mauve.vercel.app/flow/cmkehumzy0000kz44zccxzhh6](https://weavy-clone-mauve.vercel.app/flow/cmkehumzy0000kz44zccxzhh6)
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+## How It Works
+This application allows you to build complex workflows by connecting different nodes. You can process media, run AI models, and chain outputs from one node to another.
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+**Key Features:**
+*   **Visual Editor:** Drag-and-drop interface powered by React Flow.
+*   **AI Integration:** Use LLM nodes to generate text or analyze content (Groq).
+*   **Media Processing:** Upload videos/images, crop images, and extract frames from videos.
+*   **Background Jobs:** Heavy tasks (like video processing and LLM calls) are handled reliably by **Trigger.dev**.
+*   **Authentication:** Secure user management with Clerk.
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+## Installation
 
-## Learn More
+### Prerequisites
+*   Node.js & npm
+*   PostgreSQL Database
+*   Accounts for: [Clerk](https://clerk.com), [Cloudinary](https://cloudinary.com), [Trigger.dev](https://trigger.dev), [Groq](https://groq.com)
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+### Steps
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd weavy-clone
+    ```
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
 
-## How do I deploy this?
+3.  **Set up Environment Variables:**
+    Create a `.env` file in the root directory and add the following keys:
+    ```env
+    # Database
+    DATABASE_URL="postgresql://..."
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+    # Auth (Clerk)
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=...
+    CLERK_SECRET_KEY=...
+
+    # Cloudinary
+    NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=...
+    NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=...
+    CLOUDINARY_API_KEY=...
+    CLOUDINARY_API_SECRET=...
+
+    # AI
+    GROQ_API_KEY=...
+
+    # Trigger.dev
+    TRIGGER_SECRET_KEY=...
+    ```
+
+4.  **Initialize Database:**
+    ```bash
+    npx prisma db push
+    ```
+
+5.  **Start the Development Server:**
+    ```bash
+    npm run dev
+    ```
+
+6.  **Start Trigger.dev (for background tasks):**
+    In a separate terminal, run:
+    ```bash
+    npx trigger.dev@latest dev
+    ```
+
+Open [http://localhost:3000](http://localhost:3000) to start building workflows.

@@ -3,7 +3,7 @@
 import { UserButton, useUser } from "@clerk/nextjs";
 import { CreateWorkflowDialog } from "./CreateWorkflowDialog";
 
-export function DashboardHeader() {
+export function DashboardHeader({ workflows = [] }: { workflows?: any[] }) {
   const { user, isLoaded } = useUser();
 
   return (
@@ -12,6 +12,11 @@ export function DashboardHeader() {
         <h1 className="text-sm font-medium text-gray-200">
           {isLoaded && user ? `${user.firstName || user.username}'s Workspace` : "Workspace"}
         </h1>
+        {workflows.length > 0 && (
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-gray-400 border border-white/5">
+            {workflows.length} workflows
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
