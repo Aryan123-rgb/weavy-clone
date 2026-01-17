@@ -3,9 +3,8 @@ import { DashboardHeader } from "~/components/dashboard/DashboardHeader";
 import { EmptyState } from "~/components/dashboard/EmptyState";
 import { db } from "~/server/db";
 
-async function getWorkflows(userId: string) {
+async function getWorkflows() {
   return await db.workflow.findMany({
-    where: { userId },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -17,7 +16,7 @@ export default async function DashboardPage() {
     return null; // Or redirect
   }
 
-  const workflows = await getWorkflows(userId);
+  const workflows = await getWorkflows();
 
   console.log(workflows)
 
